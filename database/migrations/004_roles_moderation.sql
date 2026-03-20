@@ -1,0 +1,3 @@
+-- Роли: user | moderator | admin | vip
+-- Модерация: account_blocked, chat_banned_until, chat_ban_reason, chat_banned_by
+-- Идемпотентное применение — через bootstrap в backend/src/main.cpp
