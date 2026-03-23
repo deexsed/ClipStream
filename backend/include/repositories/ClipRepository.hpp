@@ -16,6 +16,12 @@ namespace clipstream::repositories {
 enum class ClipSort { Popular, Recent, Duration };
 enum class TimePeriod { Today, Week, Month, All };
 
+/// Результат upsert лайка: дельта репутации владельца клипа (не учитывает self-vote — обнуляет сервис).
+struct LikeUpsertResult {
+    bool ok{false};
+    int  author_reputation_delta{0};
+};
+
 /// Минимальные поля для обновления метаданных при синке дубликатов.
 struct ExistingClipRef {
     uint64_t id{};
@@ -65,6 +71,10 @@ struct RecommendationWeights {
     double rec_affinity_recent_game_boost{22.0};
     /// Игры, где пользователь реально смотрел клипы (user_clip_engagement), не только открыл карточку
     double rec_engagement_game_boost{16.0};
+    /// Просмотры на платформе (view_history), LOG(1+n) в формуле ранжирования
+    double rec_platform_view_weight{0.42};
+    /// Комментарии на платформе, LOG(1+n)
+    double rec_platform_comment_weight{1.75};
 };
 
 class ClipRepository : public IRepository<models::Clip> {
@@ -120,6 +130,18 @@ public:
     std::vector<models::Clip> find_public_clips_for_home_fallback(uint32_t limit, const FeedMuteSet* mutes = nullptr);
     std::vector<models::Clip> search(const std::string& query, uint32_t limit, uint32_t offset,
                                      const FeedMuteSet* mutes = nullptr);
+    /// Много комментариев за последние `hours` часов (для блока «обсуждают сейчас»).
+    std::vector<models::Clip> find_discussed_clips(uint32_t hours, uint32_t limit, const FeedMuteSet* mutes = nullptr,
+                                                   bool with_tags = true);
+    /// Недосмотренные клипы по user_clip_engagement (с heartbeat авторизованного зрителя).
+    std::vector<models::Clip> find_continue_watching(uint64_t user_id, uint32_t limit, const FeedMuteSet* mutes = nullptr,
+                                                     bool with_tags = true);
+    /// Свежие клипы каналов, которые пользователь недавно открывал (view_history).
+    std::vector<models::Clip> find_clips_from_visited_channels(uint64_t user_id, uint32_t visit_days, uint32_t clip_days,
+                                                                uint32_t limit, const FeedMuteSet* mutes = nullptr,
+                                                                bool with_tags = true);
+    /// Один случайный клип из публичной выдачи (для кнопки «удачи»).
+    std::optional<models::Clip> find_random_clip(const FeedMuteSet* mutes = nullptr, bool with_tags = true);
     bool increment_views(uint64_t id);
     bool record_user_view(uint64_t user_id, uint64_t clip_id);
     /// Был ли просмотр этой пары user+clip за последние `hours` часов (для анти-накрутки view_count).
@@ -139,7 +161,7 @@ public:
     bool update_like_count(uint64_t id, int like_delta, int dislike_delta);
     /// Учёт лайка/дизлайка в likes и корректировка счётчиков клипа.
     /// Повтор того же голоса = снять голос (DELETE из likes).
-    bool upsert_user_like(uint64_t user_id, uint64_t clip_id, bool is_like);
+    LikeUpsertResult upsert_user_like(uint64_t user_id, uint64_t clip_id, bool is_like);
     /// Текущий голос пользователя: nullopt — нет строки; true — лайк; false — дизлайк.
     std::optional<bool> get_user_vote(uint64_t user_id, uint64_t clip_id);
 

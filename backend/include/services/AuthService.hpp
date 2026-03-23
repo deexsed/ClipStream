@@ -32,6 +32,7 @@ public:
     std::optional<uint64_t>   verify_token(const std::string& token);
     std::string               hash_password(const std::string& password);
     bool                      check_password(const std::string& password, const std::string& hash);
+    std::optional<nlohmann::json> site_user_by_twitch_id(const std::string& twitch_id);
 
 private:
     std::string generate_token(uint64_t user_id);

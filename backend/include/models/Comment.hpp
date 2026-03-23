@@ -27,6 +27,12 @@ struct Comment {
     bool                    is_clip_channel_owner{false};
     std::vector<std::string> author_badges;
     std::vector<Comment>    replies;
+
+    uint32_t                upvotes{0};
+    uint32_t                downvotes{0};
+    std::optional<int8_t>   user_vote;
+    /// none | friends | outgoing | incoming | self — связь зрителя с автором (друзья / заявки)
+    std::string             viewer_friendship{"none"};
 };
 
 inline void to_json(nlohmann::json& j, const Comment& c) {
@@ -45,6 +51,10 @@ inline void to_json(nlohmann::json& j, const Comment& c) {
         {"replies",       c.replies}
     };
     if (c.parent_id) j["parent_id"] = *c.parent_id;
+    j["upvotes"]   = c.upvotes;
+    j["downvotes"] = c.downvotes;
+    if (c.user_vote.has_value()) j["user_vote"] = *c.user_vote;
+    j["viewer_friendship"] = c.viewer_friendship;
 }
 
 } // namespace clipstream::models

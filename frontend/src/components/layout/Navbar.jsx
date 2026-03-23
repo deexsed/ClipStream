@@ -1,17 +1,18 @@
 import { Search, Play, LogOut, Flame, Home, Compass, UserRound, Wrench, Crown, Menu, Rows3 } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import useAuthStore from '../../store/useAuthStore';
 import TwitchLoginModal from '../auth/TwitchLoginModal';
 import { shouldShowLegalConsentModal } from '../../constants/legalConsent';
 import { startTwitchOAuthRedirect } from '../../utils/twitchOAuth';
 import { useSubsSidebarStore } from '../../store/useSubsSidebarStore';
 import HeaderLanguageMenu from './HeaderLanguageMenu';
+import HeaderSearch from './HeaderSearch';
+import NotificationsDropdown from './NotificationsDropdown';
 import { useMediaMinXl } from '../../hooks/useMediaMinWidth';
 
 export default function Navbar() {
-  const [query, setQuery] = useState('');
-  const navigate = useNavigate();
+  const [searchQuery, setSearchQuery] = useState('');
   const location = useLocation();
   const isClipPage = location.pathname.startsWith('/clip/');
   const isFeedPage = location.pathname.startsWith('/feed');
@@ -22,15 +23,10 @@ export default function Navbar() {
   const dockCollapsed = useSubsSidebarStore((s) => s.dockCollapsed);
   const clipOverlayOpen = useSubsSidebarStore((s) => s.clipOverlayOpen);
   const [twitchModalOpen, setTwitchModalOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const { isAuth, user, logout } = useAuthStore();
   const staffAccess = user?.role === 1 || user?.role === 2;
   const isAdmin = user?.role === 2;
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    if (!query.trim()) return;
-    navigate(`/?q=${encodeURIComponent(query.trim())}`);
-  };
 
   const openTwitchLogin = () => {
     if (shouldShowLegalConsentModal()) {
@@ -48,7 +44,8 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="h-16 border-b border-brand-700/60 bg-brand-900/85 backdrop-blur-xl flex items-center justify-between px-4 lg:px-6 z-20 shrink-0">
+    <nav className="border-b border-brand-700/60 bg-brand-900/85 backdrop-blur-xl z-20 shrink-0 flex flex-col">
+      <div className="h-16 flex items-center justify-between px-4 lg:px-6 w-full min-w-0">
       <div className="flex items-center gap-3 min-w-0">
         {showSubsMenu && (
           <button
@@ -89,20 +86,23 @@ export default function Navbar() {
         </div>
       </div>
 
-      <form onSubmit={handleSearch} className="flex-1 max-w-xl mx-4 hidden sm:block">
-        <div className="relative group">
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Поиск клипов..."
-            className="w-full bg-brand-800/70 border border-brand-700 text-sm rounded-full py-2.5 px-4 pl-10 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all text-gray-200 placeholder-gray-500"
-          />
-          <Search className="absolute left-3.5 top-3 w-4 h-4 text-gray-500 group-focus-within:text-brand-500 transition-colors" />
-        </div>
-      </form>
+      <HeaderSearch
+        value={searchQuery}
+        onValueChange={setSearchQuery}
+        className="flex-1 max-w-xl mx-2 sm:mx-4 hidden sm:block min-w-0"
+      />
 
-      <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => setMobileSearchOpen((v) => !v)}
+        className="sm:hidden shrink-0 p-2.5 rounded-xl text-gray-400 hover:text-white hover:bg-brand-800/80 transition-colors border border-brand-700/50"
+        aria-expanded={mobileSearchOpen}
+        aria-label={mobileSearchOpen ? 'Закрыть поиск' : 'Открыть поиск'}
+      >
+        <Search className="w-5 h-5" strokeWidth={2.25} />
+      </button>
+
+      <div className="flex items-center gap-2 shrink-0">
         <HeaderLanguageMenu />
         {isAuth ? (
           <>
@@ -126,6 +126,7 @@ export default function Navbar() {
                 <span className="hidden lg:inline font-medium">Консоль</span>
               </Link>
             )}
+            <NotificationsDropdown />
             <Link
               to={user?.username ? `/u/${encodeURIComponent(user.username)}` : '/'}
               className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-brand-800/80 transition-colors border border-transparent hover:border-brand-700/60"
@@ -162,6 +163,20 @@ export default function Navbar() {
           </>
         )}
       </div>
+      </div>
+
+      {mobileSearchOpen && (
+        <div className="sm:hidden px-4 pb-3 border-t border-brand-800/60 bg-brand-900/95">
+          <HeaderSearch
+            value={searchQuery}
+            onValueChange={setSearchQuery}
+            variant="mobile"
+            autoFocus
+            className="relative"
+            onNavigate={() => setMobileSearchOpen(false)}
+          />
+        </div>
+      )}
     </nav>
   );
 }

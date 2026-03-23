@@ -62,6 +62,10 @@ void ClipController::register_routes(server::Router& router) {
     router.get("/admin/analytics/summary", [this](const server::Request& r) { return handle_admin_analytics_summary(r); });
     router.get("/clips",        [this](const server::Request& r) { return handle_get_feed(r); });
     router.get("/clips/search", [this](const server::Request& r) { return handle_search(r); });
+    router.get("/clips/discussed", [this](const server::Request& r) { return handle_discussed_clips(r); });
+    router.get("/clips/continue", [this](const server::Request& r) { return handle_continue_watching(r); });
+    router.get("/clips/channel-updates", [this](const server::Request& r) { return handle_channel_updates(r); });
+    router.get("/clips/random", [this](const server::Request& r) { return handle_random_clip(r); });
     router.get("/clips/:id/trend-ranks", [this](const server::Request& r) { return handle_clip_trend_ranks(r); });
     router.get("/clips/:id/related", [this](const server::Request& r) { return handle_related_clips(r); });
     router.get("/clips/:id",    [this](const server::Request& r) { return handle_get_clip(r); });
@@ -250,6 +254,64 @@ server::Response ClipController::handle_search(const server::Request& req) {
     nlohmann::json j = nlohmann::json::array();
     for (auto& c : clips) j.push_back(c);
     return {200, {{"clips", j}, {"count", clips.size()}}};
+}
+
+server::Response ClipController::handle_discussed_clips(const server::Request& req) {
+    uint32_t hours = 24;
+    auto     hit   = req.query.find("hours");
+    if (hit != req.query.end()) {
+        try {
+            hours = static_cast<uint32_t>(std::stoul(hit->second));
+        } catch (...) {}
+    }
+    uint32_t limit = 12;
+    auto     lit = req.query.find("limit");
+    if (lit != req.query.end()) {
+        try {
+            limit = static_cast<uint32_t>(std::stoul(lit->second));
+        } catch (...) {}
+    }
+    auto clips = service_.get_discussed_clips(hours, limit, req.user_id, parse_clip_langs_query(req));
+    nlohmann::json j = nlohmann::json::array();
+    for (auto& c : clips) j.push_back(c);
+    return {200, {{"clips", j}, {"count", clips.size()}, {"hours", hours}}};
+}
+
+server::Response ClipController::handle_continue_watching(const server::Request& req) {
+    if (req.user_id == 0) return {401, {{"error", "Unauthorized"}}};
+    uint32_t limit = 16;
+    auto     lit   = req.query.find("limit");
+    if (lit != req.query.end()) {
+        try {
+            limit = static_cast<uint32_t>(std::stoul(lit->second));
+        } catch (...) {}
+    }
+    auto clips = service_.get_continue_watching(limit, req.user_id, parse_clip_langs_query(req));
+    nlohmann::json j = nlohmann::json::array();
+    for (auto& c : clips) j.push_back(c);
+    return {200, {{"clips", j}, {"count", clips.size()}}};
+}
+
+server::Response ClipController::handle_channel_updates(const server::Request& req) {
+    if (req.user_id == 0) return {401, {{"error", "Unauthorized"}}};
+    uint32_t limit = 12;
+    auto     lit   = req.query.find("limit");
+    if (lit != req.query.end()) {
+        try {
+            limit = static_cast<uint32_t>(std::stoul(lit->second));
+        } catch (...) {}
+    }
+    auto clips = service_.get_channel_updates_for_viewer(limit, req.user_id, parse_clip_langs_query(req));
+    nlohmann::json j = nlohmann::json::array();
+    for (auto& c : clips) j.push_back(c);
+    return {200, {{"clips", j}, {"count", clips.size()}}};
+}
+
+server::Response ClipController::handle_random_clip(const server::Request& req) {
+    auto clip = service_.get_random_clip(req.user_id, parse_clip_langs_query(req));
+    if (!clip) return {404, {{"error", "No clips"}}};
+    nlohmann::json j = *clip;
+    return {200, {{"clip", j}}};
 }
 
 server::Response ClipController::handle_view(const server::Request& req) {
@@ -565,6 +627,12 @@ server::Response ClipController::handle_channel_profile(const server::Request& r
     }
     const uint64_t n = service_.count_clips_for_broadcaster(it->second, uid);
     profile["clipstream_clips"] = n;
+    if (!uid.empty()) {
+        auto site = auth_.site_user_by_twitch_id(uid);
+        profile["clipstream_site"] = site ? nlohmann::json(*site) : nlohmann::json(nullptr);
+    } else {
+        profile["clipstream_site"] = nullptr;
+    }
     return {200, profile};
 }
 

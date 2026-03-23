@@ -7,13 +7,14 @@
 #include <nlohmann/json.hpp>
 #include "models/Clip.hpp"
 #include "repositories/ClipRepository.hpp"
+#include "repositories/UserRepository.hpp"
 #include "services/CacheService.hpp"
 
 namespace clipstream::services {
 
 class ClipService {
 public:
-    ClipService(repositories::ClipRepository& clip_repo, CacheService& cache);
+    ClipService(repositories::ClipRepository& clip_repo, repositories::UserRepository& user_repo, CacheService& cache);
 
     std::vector<models::Clip> get_feed(const repositories::ClipFilter& filter,
                                         uint32_t limit, uint32_t offset, uint64_t user_id = 0,
@@ -43,6 +44,14 @@ public:
     std::optional<nlohmann::json> get_clip_trend_ranks(uint64_t clip_id, uint64_t viewer_user_id);
     std::vector<models::Clip>   search(const std::string& query, uint32_t limit, uint32_t offset, uint64_t viewer_user_id,
                                        const std::optional<std::vector<std::string>>& clip_langs_q = std::nullopt);
+    std::vector<models::Clip>   get_discussed_clips(uint32_t hours, uint32_t limit, uint64_t viewer_user_id,
+                                                    const std::optional<std::vector<std::string>>& clip_langs_q);
+    std::vector<models::Clip>   get_continue_watching(uint32_t limit, uint64_t viewer_user_id,
+                                                      const std::optional<std::vector<std::string>>& clip_langs_q);
+    std::vector<models::Clip>   get_channel_updates_for_viewer(uint32_t limit, uint64_t viewer_user_id,
+                                                               const std::optional<std::vector<std::string>>& clip_langs_q);
+    std::optional<models::Clip> get_random_clip(uint64_t viewer_user_id,
+                                                const std::optional<std::vector<std::string>>& clip_langs_q);
     void                        record_view(uint64_t clip_id, uint64_t user_id);
     void                        record_clip_engagement(uint64_t clip_id, uint64_t user_id, float watched_sec,
                                                        float duration_sec, bool session_final,
@@ -73,6 +82,7 @@ private:
     std::string cache_key(const repositories::ClipFilter& f, uint32_t limit, uint32_t offset, uint64_t user_id);
 
     repositories::ClipRepository& clip_repo_;
+    repositories::UserRepository& user_repo_;
     CacheService& cache_;
     repositories::RecommendationWeights rec_weights_;
 };

@@ -38,6 +38,9 @@ export default function ClipLanguageInlineBar({ syncUrl = false }) {
 
   return (
     <div className="space-y-3">
+      <p className="text-[11px] text-gray-500 leading-snug max-w-2xl">
+        Языки вещания клипов: отметьте те, на которых вам комфортно смотреть — выдача на этой странице подстроится.
+      </p>
       <div className="flex flex-wrap items-center gap-2">
         {TWITCH_BROADCAST_LANGUAGES.map(({ code, label }) => {
           const on = codes.includes(code);

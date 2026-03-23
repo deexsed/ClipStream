@@ -80,13 +80,37 @@ export const clips = {
   feedback: (id, action) => api.post(`/clips/${id}/feedback`, { action }),
   like:     (id, isLike) => api.post(`/clips/${id}/like`, { is_like: isLike }),
   report:   (id, reason) => api.post(`/clips/${id}/report`, { reason }),
+  /** hours, limit — query; языки из шапки. */
+  discussed: (params = '') => api.get(`/clips/discussed?${withClipLangs(params || '')}`),
+  /** Только авторизованный: недосмотренное по heartbeat engagement. */
+  continueWatching: (params = '') => api.get(`/clips/continue?${withClipLangs(params || '')}`),
+  /** Только авторизованный: свежие клипы каналов из недавней истории просмотров. */
+  channelUpdates: (params = '') => api.get(`/clips/channel-updates?${withClipLangs(params || '')}`),
+  /** Случайный клип (учёт языков и мутов для залогиненного). */
+  random: () => api.get(`/clips/random?${withClipLangs('')}`),
 };
 
 export const comments = {
-  list:   (clipId, limit = 20, offset = 0) => api.get(`/clips/${clipId}/comments?limit=${limit}&offset=${offset}`),
+  list: (clipId, limitOrOpts = 50, offset = 0) => {
+    let limit = 50;
+    let off = 0;
+    let sort = 'recent';
+    if (limitOrOpts !== null && typeof limitOrOpts === 'object') {
+      limit = limitOrOpts.limit ?? 50;
+      off = limitOrOpts.offset ?? 0;
+      sort = limitOrOpts.sort ?? 'recent';
+    } else {
+      limit = limitOrOpts;
+      off = offset;
+    }
+    return api.get(
+      `/clips/${clipId}/comments?limit=${limit}&offset=${off}&sort=${encodeURIComponent(sort)}`,
+    );
+  },
   create: (clipId, body, parentId) => api.post(`/clips/${clipId}/comments`, { body, parent_id: parentId }),
   update: (id, body) => api.put(`/comments/${id}`, { body }),
   remove: (id) => api.del(`/comments/${id}`),
+  vote: (id, value) => api.post(`/comments/${id}/vote`, { value }),
 };
 
 export const games = {
@@ -124,14 +148,21 @@ export const staff = {
 
 export const social = {
   publicProfile: (username) => api.get(`/users/public/${encodeURIComponent(username)}`),
-  follow: (userId) => api.post(`/social/follow/${userId}`),
-  unfollow: (userId) => api.del(`/social/follow/${userId}`),
+  friendRequest: (userId) => api.post(`/social/friends/request/${userId}`),
+  cancelFriendRequest: (userId) => api.del(`/social/friends/request/${userId}`),
+  acceptFriend: (userId) => api.post(`/social/friends/accept/${userId}`),
+  declineFriend: (userId) => api.post(`/social/friends/decline/${userId}`),
+  removeFriend: (userId) => api.del(`/social/friends/${userId}`),
+  friends: (userId, params = '') => api.get(`/social/users/${userId}/friends?${params}`),
+  friendRequestsIncoming: (params = '') => api.get(`/social/friends/incoming?${params}`),
+  friendRequestsOutgoing: (params = '') => api.get(`/social/friends/outgoing?${params}`),
   friendsFeed: (params = '') => api.get(`/social/friends-feed?${withClipLangs(params)}`),
-  followers: (userId, params = '') => api.get(`/social/users/${userId}/followers?${params}`),
-  following: (userId, params = '') => api.get(`/social/users/${userId}/following?${params}`),
   userClips: (userId, params = '') => api.get(`/social/users/${userId}/clips?${withClipLangs(params)}`),
   watchActivity: (userId, params = '') => api.get(`/social/users/${userId}/watch-activity?${params}`),
   searchUsers: (q, limit = 15) => api.get(`/users/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  wall: (username, params = '') =>
+    api.get(`/users/${encodeURIComponent(username)}/wall${params ? `?${params}` : ''}`),
+  wallPost: (username, body) => api.post('/social/wall', { username, body }),
 };
 
 export const userSettings = {
@@ -141,6 +172,13 @@ export const userSettings = {
 
 export const moderation = {
   restriction: (userId, body) => api.post(`/moderation/users/${userId}/restriction`, body),
+};
+
+export const notifications = {
+  list: (params = '') => api.get(`/notifications${params ? `?${params}` : ''}`),
+  unreadCount: () => api.get('/notifications/unread-count'),
+  markRead: (ids) => api.post('/notifications/read', { ids }),
+  markAllRead: () => api.post('/notifications/read-all', {}),
 };
 
 export const auth = {

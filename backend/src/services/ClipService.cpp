@@ -45,8 +45,9 @@ const repositories::FeedMuteSet* resolve_mutes(repositories::ClipRepository& rep
 
 } // namespace
 
-ClipService::ClipService(repositories::ClipRepository& clip_repo, CacheService& cache)
-    : clip_repo_(clip_repo), cache_(cache) {}
+ClipService::ClipService(repositories::ClipRepository& clip_repo, repositories::UserRepository& user_repo,
+                         CacheService& cache)
+    : clip_repo_(clip_repo), user_repo_(user_repo), cache_(cache) {}
 
 std::string ClipService::cache_key(const repositories::ClipFilter& f,
                                     uint32_t limit, uint32_t offset, uint64_t user_id) {
@@ -360,6 +361,40 @@ std::vector<models::Clip> ClipService::search(const std::string& query, uint32_t
     repositories::FeedMuteSet mutes;
     const repositories::FeedMuteSet* mp = resolve_mutes(clip_repo_, viewer_user_id, clip_langs_q, mutes);
     return clip_repo_.search(query, limit, offset, mp);
+}
+
+std::vector<models::Clip> ClipService::get_discussed_clips(uint32_t hours, uint32_t limit, uint64_t viewer_user_id,
+                                                           const std::optional<std::vector<std::string>>& clip_langs_q) {
+    repositories::FeedMuteSet mutes;
+    const repositories::FeedMuteSet* mp = resolve_mutes(clip_repo_, viewer_user_id, clip_langs_q, mutes);
+    return clip_repo_.find_discussed_clips(hours, limit, mp, true);
+}
+
+std::vector<models::Clip> ClipService::get_continue_watching(uint32_t limit, uint64_t viewer_user_id,
+                                                               const std::optional<std::vector<std::string>>& clip_langs_q) {
+    if (viewer_user_id == 0) return {};
+    if (limit < 1) limit = 1;
+    if (limit > 36) limit = 36;
+    repositories::FeedMuteSet mutes;
+    const repositories::FeedMuteSet* mp = resolve_mutes(clip_repo_, viewer_user_id, clip_langs_q, mutes);
+    return clip_repo_.find_continue_watching(viewer_user_id, limit, mp, true);
+}
+
+std::vector<models::Clip> ClipService::get_channel_updates_for_viewer(uint32_t limit, uint64_t viewer_user_id,
+                                                                      const std::optional<std::vector<std::string>>& clip_langs_q) {
+    if (viewer_user_id == 0) return {};
+    if (limit < 1) limit = 1;
+    if (limit > 36) limit = 36;
+    repositories::FeedMuteSet mutes;
+    const repositories::FeedMuteSet* mp = resolve_mutes(clip_repo_, viewer_user_id, clip_langs_q, mutes);
+    return clip_repo_.find_clips_from_visited_channels(viewer_user_id, 21, 7, limit, mp, true);
+}
+
+std::optional<models::Clip> ClipService::get_random_clip(uint64_t viewer_user_id,
+                                                         const std::optional<std::vector<std::string>>& clip_langs_q) {
+    repositories::FeedMuteSet mutes;
+    const repositories::FeedMuteSet* mp = resolve_mutes(clip_repo_, viewer_user_id, clip_langs_q, mutes);
+    return clip_repo_.find_random_clip(mp, true);
 }
 
 static std::vector<uint64_t> viewed_ids_from_cache(const std::string& raw) {
@@ -696,9 +731,17 @@ void ClipService::record_view(uint64_t clip_id, uint64_t user_id) {
 }
 
 bool ClipService::toggle_like(uint64_t clip_id, uint64_t user_id, bool is_like) {
-    bool ok = clip_repo_.upsert_user_like(user_id, clip_id, is_like);
-    if (ok) cache_.del("clip:" + std::to_string(clip_id));
-    return ok;
+    auto res = clip_repo_.upsert_user_like(user_id, clip_id, is_like);
+    if (!res.ok) return false;
+    cache_.del("clip:" + std::to_string(clip_id));
+    if (res.author_reputation_delta != 0 && user_id != 0) {
+        if (auto clip = clip_repo_.find_by_id(clip_id)) {
+            const uint64_t owner = user_repo_.clip_owner_user_id_for_reputation(*clip);
+            if (owner != 0 && owner != user_id)
+                user_repo_.update_reputation(owner, res.author_reputation_delta);
+        }
+    }
+    return true;
 }
 
 bool ClipService::report_clip(uint64_t reporter_id, uint64_t clip_id, const std::string& reason) {

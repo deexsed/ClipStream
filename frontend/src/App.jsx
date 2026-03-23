@@ -6,7 +6,6 @@ import ClipPage from './pages/ClipPage';
 import ClipFeedPage from './pages/ClipFeedPage';
 import CategoriesPage from './pages/CategoriesPage';
 import CategoryPage from './pages/CategoryPage';
-import ChannelPage from './pages/ChannelPage';
 import TrendsPage from './pages/TrendsPage';
 import AuthCallback from './pages/AuthCallback';
 import StaffConsole from './pages/StaffConsole';
@@ -27,7 +26,7 @@ export default function App() {
         <Route path="/trends" element={<TrendsPage />} />
         <Route path="/discover" element={<Navigate to="/trends" replace />} />
         <Route path="/category/:id" element={<CategoryPage />} />
-        <Route path="/channel/:login" element={<ChannelPage />} />
+        <Route path="/channel/:login" element={<Profile />} />
         <Route path="/staff" element={<StaffConsole />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/auth/callback" element={<AuthCallback />} />

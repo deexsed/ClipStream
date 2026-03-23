@@ -43,6 +43,9 @@ export default function HeaderLanguageMenu() {
           className="absolute right-0 top-full mt-2 w-[min(100vw-2rem,18rem)] max-h-[min(70vh,22rem)] flex flex-col rounded-xl border border-brand-600/80 bg-[#18181b] shadow-xl shadow-black/50 z-50 overflow-hidden"
           role="listbox"
         >
+          <p className="px-3 py-2.5 text-[11px] text-gray-500 leading-snug border-b border-brand-700/50 shrink-0">
+            Показываем клипы на выбранных языках вещания — так лента и поиск ближе к тому, что вы реально смотрите.
+          </p>
           <div className="overflow-y-auto overscroll-contain flex-1 py-1">
             {TWITCH_BROADCAST_LANGUAGES.map(({ code, label }) => {
               const on = codes.includes(code);

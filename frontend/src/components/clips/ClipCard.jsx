@@ -52,7 +52,6 @@ function renderHighlighted(text, query) {
 
 const SHELF_LABELS = {
   for_you: 'Для вас',
-  trending: 'В тренде',
   fresh: 'Новинки',
   explore: 'Открытие',
 };

@@ -13,6 +13,7 @@
 #include "repositories/UserRepository.hpp"
 #include "repositories/ClipRepository.hpp"
 #include "repositories/CommentRepository.hpp"
+#include "repositories/NotificationRepository.hpp"
 
 #include "services/AuthService.hpp"
 #include "services/CacheService.hpp"
@@ -28,6 +29,7 @@
 #include "controllers/AdminController.hpp"
 #include "controllers/ModerationController.hpp"
 #include "controllers/SocialController.hpp"
+#include "controllers/NotificationController.hpp"
 
 #include "middleware/AuthMiddleware.hpp"
 
@@ -293,6 +295,84 @@ int main() {
                 "INDEX idx_cl_clip (clip_id),"
                 "INDEX idx_cl_time (created_at DESC)"
                 ") ENGINE=InnoDB");
+            mysql_query(conn.raw(),
+                "CREATE TABLE IF NOT EXISTS comment_votes ("
+                "user_id BIGINT UNSIGNED NOT NULL,"
+                "comment_id BIGINT UNSIGNED NOT NULL,"
+                "vote TINYINT NOT NULL,"
+                "PRIMARY KEY (user_id, comment_id),"
+                "INDEX idx_cv_comment (comment_id),"
+                "CONSTRAINT fk_cv_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,"
+                "CONSTRAINT fk_cv_comment FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE"
+                ") ENGINE=InnoDB");
+            mysql_query(conn.raw(),
+                "CREATE TABLE IF NOT EXISTS notifications ("
+                "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
+                "user_id BIGINT UNSIGNED NOT NULL,"
+                "type VARCHAR(32) NOT NULL,"
+                "actor_id BIGINT UNSIGNED NOT NULL,"
+                "payload JSON NULL,"
+                "read_at TIMESTAMP NULL DEFAULT NULL,"
+                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                "INDEX idx_notif_user_time (user_id, created_at DESC),"
+                "INDEX idx_notif_user_unread (user_id, read_at),"
+                "CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,"
+                "CONSTRAINT fk_notif_actor FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE CASCADE"
+                ") ENGINE=InnoDB");
+            mysql_query(conn.raw(),
+                "CREATE TABLE IF NOT EXISTS friendships ("
+                "user_id BIGINT UNSIGNED NOT NULL,"
+                "friend_id BIGINT UNSIGNED NOT NULL,"
+                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                "PRIMARY KEY (user_id, friend_id),"
+                "INDEX idx_friends_friend (friend_id),"
+                "CONSTRAINT fk_friends_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,"
+                "CONSTRAINT fk_friends_peer FOREIGN KEY (friend_id) REFERENCES users(id) ON DELETE CASCADE,"
+                "CONSTRAINT chk_friends_ne CHECK (user_id <> friend_id)"
+                ") ENGINE=InnoDB");
+            mysql_query(conn.raw(),
+                "CREATE TABLE IF NOT EXISTS friend_requests ("
+                "requester_id BIGINT UNSIGNED NOT NULL,"
+                "addressee_id BIGINT UNSIGNED NOT NULL,"
+                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                "PRIMARY KEY (requester_id, addressee_id),"
+                "INDEX idx_fr_addressee (addressee_id),"
+                "CONSTRAINT fk_fr_req FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,"
+                "CONSTRAINT fk_fr_add FOREIGN KEY (addressee_id) REFERENCES users(id) ON DELETE CASCADE,"
+                "CONSTRAINT chk_fr_ne CHECK (requester_id <> addressee_id)"
+                ") ENGINE=InnoDB");
+            mysql_query(conn.raw(),
+                "CREATE TABLE IF NOT EXISTS user_achievements ("
+                "user_id BIGINT UNSIGNED NOT NULL,"
+                "achievement_key VARCHAR(64) NOT NULL,"
+                "earned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                "PRIMARY KEY (user_id, achievement_key),"
+                "INDEX idx_ua_time (user_id, earned_at DESC),"
+                "CONSTRAINT fk_ua_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
+                ") ENGINE=InnoDB");
+            mysql_query(conn.raw(),
+                "CREATE TABLE IF NOT EXISTS profile_wall_posts ("
+                "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
+                "profile_owner_id BIGINT UNSIGNED NOT NULL,"
+                "author_id BIGINT UNSIGNED NOT NULL,"
+                "body TEXT NOT NULL,"
+                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                "INDEX idx_wall_owner (profile_owner_id, created_at DESC),"
+                "CONSTRAINT fk_wall_owner FOREIGN KEY (profile_owner_id) REFERENCES users(id) ON DELETE CASCADE,"
+                "CONSTRAINT fk_wall_author FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE"
+                ") ENGINE=InnoDB");
+            mysql_query(conn.raw(),
+                "CREATE TABLE IF NOT EXISTS profile_wall_mentions ("
+                "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
+                "post_id BIGINT UNSIGNED NOT NULL,"
+                "mention_kind ENUM('user','clip') NOT NULL,"
+                "mentioned_user_id BIGINT UNSIGNED NULL,"
+                "mentioned_clip_id BIGINT UNSIGNED NULL,"
+                "INDEX idx_wm_post (post_id),"
+                "CONSTRAINT fk_wm_post FOREIGN KEY (post_id) REFERENCES profile_wall_posts(id) ON DELETE CASCADE,"
+                "CONSTRAINT fk_wm_user FOREIGN KEY (mentioned_user_id) REFERENCES users(id) ON DELETE CASCADE,"
+                "CONSTRAINT fk_wm_clip FOREIGN KEY (mentioned_clip_id) REFERENCES clips(id) ON DELETE CASCADE"
+                ") ENGINE=InnoDB");
             if (!column_exists(conn.raw(), "clips", "is_mature", schema))
                 mysql_query(conn.raw(),
                     "ALTER TABLE clips ADD COLUMN is_mature TINYINT(1) NOT NULL DEFAULT 0");
@@ -333,14 +413,15 @@ int main() {
 
         repositories::UserRepository    user_repo(db_pool);
         repositories::ClipRepository    clip_repo(db_pool);
-        repositories::CommentRepository comment_repo(db_pool);
+        repositories::CommentRepository     comment_repo(db_pool);
+        repositories::NotificationRepository notif_repo(db_pool);
 
         clip_repo.refresh_feature_store_clips();
         clip_repo.refresh_feature_store_users();
 
         services::AuthService  auth_service(user_repo, jwt_secret, jwt_exp);
         services::CacheService cache_service(redis_host, redis_port);
-        services::ClipService  clip_service(clip_repo, cache_service);
+        services::ClipService  clip_service(clip_repo, user_repo, cache_service);
 
         services::TwitchService twitch_service(
             env("TWITCH_CLIENT_ID"), env("TWITCH_CLIENT_SECRET"), &cache_service);
@@ -376,16 +457,18 @@ int main() {
         controllers::AuthController    auth_ctrl(auth_service, twitch_service, cache_service, redirect_uri);
         controllers::ClipController    clip_ctrl(clip_service, twitch_service, auth_service);
         controllers::ModerationController moderation_ctrl(auth_service, user_repo);
-        controllers::CommentController comment_ctrl(comment_repo, auth_service, clip_repo, user_repo);
+        controllers::CommentController comment_ctrl(comment_repo, auth_service, clip_repo, user_repo, notif_repo);
         controllers::EventSubController eventsub_ctrl(eventsub_service);
         controllers::StaffController    staff_ctrl(auth_service, cache_service, clip_repo);
         controllers::AdminController    admin_ctrl(auth_service, user_repo, clip_repo);
-        controllers::SocialController   social_ctrl(auth_service, clip_service, user_repo);
+        controllers::SocialController   social_ctrl(auth_service, clip_service, twitch_service, user_repo, notif_repo);
+        controllers::NotificationController notif_ctrl(notif_repo);
 
         auth_ctrl.register_routes(router);
         clip_ctrl.register_routes(router);
         social_ctrl.register_routes(router);
         comment_ctrl.register_routes(router);
+        notif_ctrl.register_routes(router);
         eventsub_ctrl.register_routes(router);
         staff_ctrl.register_routes(router);
         admin_ctrl.register_routes(router);

@@ -35,10 +35,20 @@ function useSubscriptionsData() {
 
 function SubscriptionsList({ channels, isAuth, embedded }) {
   if (!isAuth) {
-    return <p className="text-xs text-gray-500">Войди через Twitch, чтобы видеть подписки.</p>;
+    return (
+      <p className="text-xs text-gray-500 leading-relaxed">
+        Войдите через Twitch — здесь появятся ваши подписки с Twitch, быстрый переход к клипам каналов и (на главной)
+        блок «Друзья смотрят» по подпискам уже на ClipStream.
+      </p>
+    );
   }
   if (channels.length === 0) {
-    return <p className="text-xs text-gray-500">Подписки не найдены или нет доступа к follows.</p>;
+    return (
+      <p className="text-xs text-gray-500 leading-relaxed">
+        Подписки не подтянулись (нет доступа к follows или список пуст). Лента на главной и рекомендации всё равно
+        работают от просмотров на сайте.
+      </p>
+    );
   }
   const inner = (
     <>
@@ -239,9 +249,9 @@ function SubscriptionsDock() {
 
 export default function FollowingSidebar() {
   const location = useLocation();
-  const isClipPage = location.pathname.startsWith('/clip/');
+  const hideDock = location.pathname.startsWith('/clip/') || location.pathname.startsWith('/feed');
 
-  if (isClipPage) {
+  if (hideDock) {
     return null;
   }
   return <SubscriptionsDock />;

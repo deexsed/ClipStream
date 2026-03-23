@@ -116,8 +116,9 @@ nlohmann::json AuthService::get_user_profile(uint64_t user_id) {
     const int liked = stats.value("liked_count", 0);
     const int viewed_unique = stats.value("unique_viewed_clips", 0);
     const int comments = stats.value("comments_count", 0);
-    const int following = stats.value("following_count", 0);
+    const int friends     = stats.value("friends_count", 0);
     const int night_views = stats.value("night_views", 0);
+    const int wall_posts  = stats.value("wall_posts_count", 0);
 
     models::Badge computed_badge = models::Badge::None;
     if (viewed_unique >= 1000 || (liked >= 300 && comments >= 120)) computed_badge = models::Badge::Legend;
@@ -148,11 +149,23 @@ nlohmann::json AuthService::get_user_profile(uint64_t user_id) {
     badges.push_back(badge_item("rising_star", "Rising Star", "100 разных клипов или 30 лайков", viewed_unique >= 100 || liked >= 30, std::max(viewed_unique, liked), 100, "violet"));
     badges.push_back(badge_item("critic", "Критик", "Оставить 100 реакций (лайк/дизлайк)", liked + stats.value("disliked_count", 0) >= 100, liked + stats.value("disliked_count", 0), 100, "orange"));
     badges.push_back(badge_item("talker", "Комментатор", "Написать 20 комментариев", comments >= 20, comments, 20, "emerald"));
-    badges.push_back(badge_item("social", "Комьюнити", "Подписаться на 10 пользователей", following >= 10, following, 10, "sky"));
+    badges.push_back(badge_item("first_friend", "Знакомство", "Первый друг на ClipStream", friends >= 1, friends, 1, "sky"));
+    badges.push_back(badge_item("social_circle", "Круг друзей", "10 друзей на ClipStream", friends >= 10, friends, 10, "cyan"));
+    badges.push_back(badge_item("social_star", "Свой человек", "25 друзей", friends >= 25, friends, 25, "violet"));
+    badges.push_back(badge_item("wall_starter", "Стена жива", "Первая запись на стене профиля", wall_posts >= 1, wall_posts, 1, "fuchsia"));
     badges.push_back(badge_item("night_owl", "Night Owl", "30 ночных просмотров (00:00-05:59)", night_views >= 30, night_views, 30, "indigo"));
     badges.push_back(badge_item("legend", "Legend", "1000 разных клипов или 300 лайков + 120 комментариев",
                                 viewed_unique >= 1000 || (liked >= 300 && comments >= 120),
                                 std::max(viewed_unique, liked), 1000, "gold"));
+
+    std::vector<std::string> sync_keys;
+    for (const auto& b : badges) {
+        if (b.value("unlocked", false)) {
+            std::string kid = b.value("id", "");
+            if (!kid.empty()) sync_keys.push_back(kid);
+        }
+    }
+    user_repo_.sync_earned_achievements(user_id, sync_keys);
 
     return {
         {"user", user ? nlohmann::json(*user) : nlohmann::json::object()},
@@ -209,6 +222,10 @@ std::optional<AuthResult> AuthService::login_twitch(const std::string& twitch_id
         }
         return std::nullopt;
     }
+}
+
+std::optional<nlohmann::json> AuthService::site_user_by_twitch_id(const std::string& twitch_id) {
+    return user_repo_.find_site_user_by_twitch_id(twitch_id);
 }
 
 } // namespace clipstream::services

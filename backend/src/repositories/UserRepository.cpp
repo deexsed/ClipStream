@@ -2,8 +2,10 @@
 #include "database/SqlEscape.hpp"
 #include <algorithm>
 #include <cstring>
+#include <sstream>
 #include <stdexcept>
 #include <unordered_map>
+#include <unordered_set>
 #include <nlohmann/json.hpp>
 
 namespace clipstream::repositories {
@@ -175,10 +177,19 @@ std::optional<models::User> UserRepository::find_by_twitch_id(const std::string&
 }
 
 bool UserRepository::update_reputation(uint64_t id, int delta) {
+    if (id == 0 || delta == 0) return true;
     database::ScopedConnection conn(pool_);
-    std::string sql = "UPDATE users SET reputation = reputation + (" + std::to_string(delta)
-        + ") WHERE id=" + std::to_string(id);
+    std::string sql = "UPDATE users SET reputation = GREATEST(0, reputation + (" + std::to_string(delta)
+        + ")) WHERE id=" + std::to_string(id);
     return mysql_query(conn.raw(), sql.c_str()) == 0;
+}
+
+uint64_t UserRepository::clip_owner_user_id_for_reputation(const models::Clip& clip) {
+    if (clip.author_id != 0) return clip.author_id;
+    if (!clip.creator_twitch_id.empty()) {
+        if (auto u = find_by_twitch_id(clip.creator_twitch_id)) return u->id;
+    }
+    return 0;
 }
 
 nlohmann::json UserRepository::get_profile_stats(uint64_t user_id) {
@@ -189,6 +200,7 @@ nlohmann::json UserRepository::get_profile_stats(uint64_t user_id) {
         {"unique_viewed_clips", 0},
         {"total_views_events", 0},
         {"comments_count", 0},
+        {"friends_count", 0},
         {"following_count", 0},
         {"followers_count", 0},
         {"clips_created_count", 0},
@@ -197,7 +209,8 @@ nlohmann::json UserRepository::get_profile_stats(uint64_t user_id) {
         {"favorite_broadcaster_id", ""},
         {"favorite_broadcaster_name", ""},
         {"night_views", 0},
-        {"last_view_at", ""}
+        {"last_view_at", ""},
+        {"wall_posts_count", 0},
     };
 
     auto one_int = [&](const std::string& sql) -> int {
@@ -215,8 +228,9 @@ nlohmann::json UserRepository::get_profile_stats(uint64_t user_id) {
     stats["unique_viewed_clips"] = one_int("SELECT COUNT(DISTINCT clip_id) FROM view_history WHERE user_id=" + std::to_string(user_id));
     stats["total_views_events"] = one_int("SELECT COUNT(*) FROM view_history WHERE user_id=" + std::to_string(user_id));
     stats["comments_count"] = one_int("SELECT COUNT(*) FROM comments WHERE user_id=" + std::to_string(user_id));
-    stats["following_count"] = one_int("SELECT COUNT(*) FROM subscriptions WHERE follower_id=" + std::to_string(user_id));
-    stats["followers_count"] = one_int("SELECT COUNT(*) FROM subscriptions WHERE followed_id=" + std::to_string(user_id));
+    stats["friends_count"]   = one_int("SELECT COUNT(*) FROM friendships WHERE user_id=" + std::to_string(user_id));
+    stats["following_count"] = 0;
+    stats["followers_count"] = 0;
     stats["clips_created_count"] = one_int(
         "SELECT COUNT(*) FROM clips WHERE unavailable_at IS NULL AND (author_id=" + std::to_string(user_id)
         + " OR (clip_creator_twitch_id<>'' AND clip_creator_twitch_id=(SELECT twitch_id FROM users WHERE id="
@@ -224,6 +238,8 @@ nlohmann::json UserRepository::get_profile_stats(uint64_t user_id) {
     stats["night_views"] = one_int(
         "SELECT COUNT(*) FROM view_history WHERE user_id=" + std::to_string(user_id)
         + " AND (HOUR(viewed_at) BETWEEN 0 AND 5)");
+    stats["wall_posts_count"] = one_int(
+        "SELECT COUNT(*) FROM profile_wall_posts WHERE profile_owner_id=" + std::to_string(user_id));
 
     {
         std::string sql =
@@ -512,11 +528,38 @@ bool UserRepository::set_account_blocked(uint64_t user_id, bool blocked) {
 }
 
 bool UserRepository::follow(uint64_t follower_id, uint64_t followed_id) {
-    if (follower_id == followed_id) return false;
+    return try_follow(follower_id, followed_id) >= 0;
+}
+
+int UserRepository::try_follow(uint64_t follower_id, uint64_t followed_id) {
+    if (follower_id == followed_id) return 0;
     database::ScopedConnection conn(pool_);
     std::string sql = "INSERT IGNORE INTO subscriptions (follower_id, followed_id) VALUES ("
         + std::to_string(follower_id) + "," + std::to_string(followed_id) + ")";
-    return mysql_query(conn.raw(), sql.c_str()) == 0;
+    if (mysql_query(conn.raw(), sql.c_str()) != 0) return -1;
+    return mysql_affected_rows(conn.raw()) == 1 ? 1 : 0;
+}
+
+std::unordered_set<uint64_t> UserRepository::following_ids_among(uint64_t follower_id,
+                                                                 const std::vector<uint64_t>& user_ids) {
+    std::unordered_set<uint64_t> out;
+    if (follower_id == 0 || user_ids.empty()) return out;
+    database::ScopedConnection conn(pool_);
+    std::ostringstream in;
+    for (size_t i = 0; i < user_ids.size(); ++i) {
+        if (i) in << ",";
+        in << user_ids[i];
+    }
+    std::string sql = "SELECT friend_id FROM friendships WHERE user_id=" + std::to_string(follower_id)
+        + " AND friend_id IN (" + in.str() + ")";
+    if (mysql_query(conn.raw(), sql.c_str())) return out;
+    MYSQL_RES* res = mysql_store_result(conn.raw());
+    if (!res) return out;
+    while (MYSQL_ROW row = mysql_fetch_row(res)) {
+        if (row[0]) out.insert(std::stoull(row[0]));
+    }
+    mysql_free_result(res);
+    return out;
 }
 
 bool UserRepository::unfollow(uint64_t follower_id, uint64_t followed_id) {
@@ -528,8 +571,8 @@ bool UserRepository::unfollow(uint64_t follower_id, uint64_t followed_id) {
 
 bool UserRepository::is_following(uint64_t follower_id, uint64_t followed_id) {
     database::ScopedConnection conn(pool_);
-    std::string sql = "SELECT 1 FROM subscriptions WHERE follower_id=" + std::to_string(follower_id)
-        + " AND followed_id=" + std::to_string(followed_id) + " LIMIT 1";
+    std::string sql = "SELECT 1 FROM friendships WHERE user_id=" + std::to_string(follower_id)
+        + " AND friend_id=" + std::to_string(followed_id) + " LIMIT 1";
     if (mysql_query(conn.raw(), sql.c_str()) != 0) return false;
     MYSQL_RES* res = mysql_store_result(conn.raw());
     if (!res) return false;
@@ -641,11 +684,49 @@ std::optional<nlohmann::json> UserRepository::get_public_profile(const std::stri
     else j["twitch_id"] = nullptr;
     j["stats"] = get_profile_stats(u->id);
     j["badge_history"] = get_badge_history(u->id, 50);
-    if (viewer_id != 0 && viewer_id != u->id)
-        j["is_following"] = is_following(viewer_id, u->id);
-    else
-        j["is_following"] = nullptr;
+    j["friendship"]    = friendship_status(viewer_id, u->id);
+    {
+        auto ach = list_earned_achievements(u->id, 64);
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& row : ach) arr.push_back(row);
+        j["achievements_earned"] = std::move(arr);
+    }
     return j;
+}
+
+bool UserRepository::has_recent_site_activity(uint64_t user_id, unsigned window_minutes) {
+    if (user_id == 0) return false;
+    unsigned w = std::max(1u, std::min(120u, window_minutes));
+    database::ScopedConnection conn(pool_);
+    std::string sql = "SELECT 1 FROM analytics_sessions WHERE user_id=" + std::to_string(user_id)
+        + " AND last_seen_at >= UTC_TIMESTAMP() - INTERVAL " + std::to_string(w) + " MINUTE LIMIT 1";
+    if (mysql_query(conn.raw(), sql.c_str())) return false;
+    MYSQL_RES* res = mysql_store_result(conn.raw());
+    if (!res) return false;
+    const bool ok = mysql_fetch_row(res) != nullptr;
+    mysql_free_result(res);
+    return ok;
+}
+
+std::optional<nlohmann::json> UserRepository::find_site_user_by_twitch_id(const std::string& twitch_id) {
+    if (twitch_id.empty()) return std::nullopt;
+    database::ScopedConnection conn(pool_);
+    auto esc = [&](const std::string& s) { return database::escape(conn.raw(), s); };
+    std::string sql = "SELECT id, username FROM users WHERE twitch_id='" + esc(twitch_id)
+        + "' AND account_blocked=0 LIMIT 1";
+    if (mysql_query(conn.raw(), sql.c_str())) return std::nullopt;
+    MYSQL_RES* res = mysql_store_result(conn.raw());
+    if (!res) return std::nullopt;
+    MYSQL_ROW row = mysql_fetch_row(res);
+    std::optional<nlohmann::json> out;
+    if (row && row[0] && row[1]) {
+        out = nlohmann::json{
+            {"id", std::stoull(row[0])},
+            {"username", std::string(row[1])},
+        };
+    }
+    mysql_free_result(res);
+    return out;
 }
 
 std::vector<nlohmann::json> UserRepository::list_followers(uint64_t user_id, uint32_t limit, uint32_t offset) {
@@ -720,6 +801,423 @@ std::vector<nlohmann::json> UserRepository::search_users_by_username_prefix(cons
     }
     mysql_free_result(res);
     return out;
+}
+
+std::string UserRepository::friendship_status(uint64_t viewer_id, uint64_t target_id) {
+    if (viewer_id == 0) return "none";
+    if (viewer_id == target_id) return "self";
+    std::vector<uint64_t> v{target_id};
+    auto m = friendship_status_bulk(viewer_id, v);
+    auto it = m.find(target_id);
+    return it == m.end() ? "none" : it->second;
+}
+
+std::unordered_map<uint64_t, std::string> UserRepository::friendship_status_bulk(uint64_t viewer_id,
+                                                                                  const std::vector<uint64_t>& target_ids) {
+    std::unordered_map<uint64_t, std::string> out;
+    if (viewer_id == 0 || target_ids.empty()) return out;
+    std::vector<uint64_t> ids;
+    ids.reserve(target_ids.size());
+    for (uint64_t t : target_ids) {
+        if (t == viewer_id) {
+            out[t] = "self";
+        } else {
+            if (out.find(t) == out.end()) {
+                out[t] = "none";
+                ids.push_back(t);
+            }
+        }
+    }
+    if (ids.empty()) return out;
+    database::ScopedConnection conn(pool_);
+    auto in_list = [&](const std::vector<uint64_t>& v) {
+        std::ostringstream o;
+        for (size_t i = 0; i < v.size(); ++i) {
+            if (i) o << ",";
+            o << v[i];
+        }
+        return o.str();
+    };
+    const std::string in = in_list(ids);
+    {
+        std::string sql = "SELECT friend_id FROM friendships WHERE user_id=" + std::to_string(viewer_id)
+            + " AND friend_id IN (" + in + ")";
+        if (mysql_query(conn.raw(), sql.c_str()) == 0) {
+            MYSQL_RES* res = mysql_store_result(conn.raw());
+            if (res) {
+                while (MYSQL_ROW row = mysql_fetch_row(res)) {
+                    if (row[0]) out[std::stoull(row[0])] = "friends";
+                }
+                mysql_free_result(res);
+            }
+        }
+    }
+    std::vector<uint64_t> rest;
+    for (uint64_t t : ids) {
+        if (out[t] != "friends") rest.push_back(t);
+    }
+    if (rest.empty()) return out;
+    const std::string in2 = in_list(rest);
+    {
+        std::string sql = "SELECT addressee_id FROM friend_requests WHERE requester_id=" + std::to_string(viewer_id)
+            + " AND addressee_id IN (" + in2 + ")";
+        if (mysql_query(conn.raw(), sql.c_str()) == 0) {
+            MYSQL_RES* res = mysql_store_result(conn.raw());
+            if (res) {
+                while (MYSQL_ROW row = mysql_fetch_row(res)) {
+                    if (row[0]) out[std::stoull(row[0])] = "outgoing";
+                }
+                mysql_free_result(res);
+            }
+        }
+    }
+    {
+        std::string sql = "SELECT requester_id FROM friend_requests WHERE addressee_id=" + std::to_string(viewer_id)
+            + " AND requester_id IN (" + in2 + ")";
+        if (mysql_query(conn.raw(), sql.c_str()) == 0) {
+            MYSQL_RES* res = mysql_store_result(conn.raw());
+            if (res) {
+                while (MYSQL_ROW row = mysql_fetch_row(res)) {
+                    if (row[0]) {
+                        uint64_t rid = std::stoull(row[0]);
+                        if (out[rid] == "none") out[rid] = "incoming";
+                    }
+                }
+                mysql_free_result(res);
+            }
+        }
+    }
+    return out;
+}
+
+static bool mysql_exec_ok(MYSQL* raw, const std::string& sql) { return mysql_query(raw, sql.c_str()) == 0; }
+
+int UserRepository::send_friend_request(uint64_t requester_id, uint64_t addressee_id) {
+    if (requester_id == 0 || addressee_id == 0 || requester_id == addressee_id) return -1;
+    database::ScopedConnection conn(pool_);
+    std::string q1 = "SELECT 1 FROM friendships WHERE user_id=" + std::to_string(requester_id) + " AND friend_id="
+        + std::to_string(addressee_id) + " LIMIT 1";
+    if (mysql_query(conn.raw(), q1.c_str()) == 0) {
+        MYSQL_RES* res = mysql_store_result(conn.raw());
+        bool exists = res && mysql_fetch_row(res);
+        if (res) mysql_free_result(res);
+        if (exists) return 0;
+    }
+    std::string qrev = "SELECT 1 FROM friend_requests WHERE requester_id=" + std::to_string(addressee_id)
+        + " AND addressee_id=" + std::to_string(requester_id) + " LIMIT 1";
+    if (mysql_query(conn.raw(), qrev.c_str()) == 0) {
+        MYSQL_RES* res = mysql_store_result(conn.raw());
+        bool rev = res && mysql_fetch_row(res);
+        if (res) mysql_free_result(res);
+        if (rev) return accept_friend_request(requester_id, addressee_id) ? 2 : -1;
+    }
+    std::string ins = "INSERT IGNORE INTO friend_requests (requester_id, addressee_id) VALUES ("
+        + std::to_string(requester_id) + "," + std::to_string(addressee_id) + ")";
+    if (!mysql_exec_ok(conn.raw(), ins)) return -1;
+    return mysql_affected_rows(conn.raw()) == 1 ? 1 : 0;
+}
+
+bool UserRepository::cancel_friend_request(uint64_t requester_id, uint64_t addressee_id) {
+    database::ScopedConnection conn(pool_);
+    std::string sql = "DELETE FROM friend_requests WHERE requester_id=" + std::to_string(requester_id)
+        + " AND addressee_id=" + std::to_string(addressee_id);
+    return mysql_exec_ok(conn.raw(), sql);
+}
+
+bool UserRepository::accept_friend_request(uint64_t addressee_id, uint64_t requester_id) {
+    if (addressee_id == 0 || requester_id == 0) return false;
+    database::ScopedConnection conn(pool_);
+    std::string del = "DELETE FROM friend_requests WHERE requester_id=" + std::to_string(requester_id)
+        + " AND addressee_id=" + std::to_string(addressee_id);
+    if (!mysql_exec_ok(conn.raw(), del) || mysql_affected_rows(conn.raw()) == 0) return false;
+    std::string a = "INSERT IGNORE INTO friendships (user_id, friend_id) VALUES ("
+        + std::to_string(addressee_id) + "," + std::to_string(requester_id) + "),(" + std::to_string(requester_id) + ","
+        + std::to_string(addressee_id) + ")";
+    return mysql_exec_ok(conn.raw(), a);
+}
+
+bool UserRepository::decline_friend_request(uint64_t addressee_id, uint64_t requester_id) {
+    return cancel_friend_request(requester_id, addressee_id);
+}
+
+bool UserRepository::remove_friendship(uint64_t user_a, uint64_t user_b) {
+    if (user_a == 0 || user_b == 0) return false;
+    database::ScopedConnection conn(pool_);
+    std::string sql = "DELETE FROM friendships WHERE (user_id=" + std::to_string(user_a) + " AND friend_id="
+        + std::to_string(user_b) + ") OR (user_id=" + std::to_string(user_b) + " AND friend_id=" + std::to_string(user_a)
+        + ")";
+    return mysql_exec_ok(conn.raw(), sql);
+}
+
+std::vector<nlohmann::json> UserRepository::list_friends(uint64_t user_id, uint32_t limit, uint32_t offset) {
+    database::ScopedConnection conn(pool_);
+    std::string sql =
+        "SELECT u.id, u.username, u.avatar_url, f.created_at AS friends_since "
+        "FROM friendships f INNER JOIN users u ON u.id = f.friend_id "
+        "WHERE f.user_id = " + std::to_string(user_id)
+        + " AND u.account_blocked = 0 ORDER BY f.created_at DESC LIMIT " + std::to_string(limit) + " OFFSET "
+        + std::to_string(offset);
+    std::vector<nlohmann::json> out;
+    if (mysql_query(conn.raw(), sql.c_str())) return out;
+    MYSQL_RES* res = mysql_store_result(conn.raw());
+    if (!res) return out;
+    while (MYSQL_ROW row = mysql_fetch_row(res)) {
+        out.push_back(nlohmann::json{
+            {"id", row[0] ? std::stoull(row[0]) : 0ULL},
+            {"username", row[1] ? std::string(row[1]) : ""},
+            {"avatar_url", row[2] ? std::string(row[2]) : ""},
+            {"since", row[3] ? std::string(row[3]) : ""},
+        });
+    }
+    mysql_free_result(res);
+    return out;
+}
+
+std::vector<nlohmann::json> UserRepository::list_friend_requests_incoming(uint64_t user_id, uint32_t limit,
+                                                                          uint32_t offset) {
+    database::ScopedConnection conn(pool_);
+    std::string sql =
+        "SELECT u.id, u.username, u.avatar_url, r.created_at AS requested_at "
+        "FROM friend_requests r INNER JOIN users u ON u.id = r.requester_id "
+        "WHERE r.addressee_id = " + std::to_string(user_id)
+        + " AND u.account_blocked = 0 ORDER BY r.created_at DESC LIMIT " + std::to_string(limit) + " OFFSET "
+        + std::to_string(offset);
+    std::vector<nlohmann::json> out;
+    if (mysql_query(conn.raw(), sql.c_str())) return out;
+    MYSQL_RES* res = mysql_store_result(conn.raw());
+    if (!res) return out;
+    while (MYSQL_ROW row = mysql_fetch_row(res)) {
+        out.push_back(nlohmann::json{
+            {"id", row[0] ? std::stoull(row[0]) : 0ULL},
+            {"username", row[1] ? std::string(row[1]) : ""},
+            {"avatar_url", row[2] ? std::string(row[2]) : ""},
+            {"since", row[3] ? std::string(row[3]) : ""},
+        });
+    }
+    mysql_free_result(res);
+    return out;
+}
+
+std::vector<nlohmann::json> UserRepository::list_friend_requests_outgoing(uint64_t user_id, uint32_t limit,
+                                                                          uint32_t offset) {
+    database::ScopedConnection conn(pool_);
+    std::string sql =
+        "SELECT u.id, u.username, u.avatar_url, r.created_at AS requested_at "
+        "FROM friend_requests r INNER JOIN users u ON u.id = r.addressee_id "
+        "WHERE r.requester_id = " + std::to_string(user_id)
+        + " AND u.account_blocked = 0 ORDER BY r.created_at DESC LIMIT " + std::to_string(limit) + " OFFSET "
+        + std::to_string(offset);
+    std::vector<nlohmann::json> out;
+    if (mysql_query(conn.raw(), sql.c_str())) return out;
+    MYSQL_RES* res = mysql_store_result(conn.raw());
+    if (!res) return out;
+    while (MYSQL_ROW row = mysql_fetch_row(res)) {
+        out.push_back(nlohmann::json{
+            {"id", row[0] ? std::stoull(row[0]) : 0ULL},
+            {"username", row[1] ? std::string(row[1]) : ""},
+            {"avatar_url", row[2] ? std::string(row[2]) : ""},
+            {"since", row[3] ? std::string(row[3]) : ""},
+        });
+    }
+    mysql_free_result(res);
+    return out;
+}
+
+bool UserRepository::sync_earned_achievements(uint64_t user_id, const std::vector<std::string>& keys) {
+    if (user_id == 0 || keys.empty()) return true;
+    database::ScopedConnection conn(pool_);
+    auto esc = [&](const std::string& s) { return database::escape(conn.raw(), s); };
+    for (const auto& k : keys) {
+        if (k.empty() || k.size() > 64) continue;
+        std::string sql = "INSERT IGNORE INTO user_achievements (user_id, achievement_key) VALUES ("
+            + std::to_string(user_id) + ",'" + esc(k) + "')";
+        mysql_query(conn.raw(), sql.c_str());
+    }
+    return true;
+}
+
+std::vector<nlohmann::json> UserRepository::list_earned_achievements(uint64_t user_id, uint32_t limit) {
+    if (limit < 1) limit = 1;
+    if (limit > 128) limit = 128;
+    database::ScopedConnection conn(pool_);
+    std::string sql = "SELECT achievement_key, earned_at FROM user_achievements WHERE user_id="
+        + std::to_string(user_id) + " ORDER BY earned_at DESC LIMIT " + std::to_string(limit);
+    std::vector<nlohmann::json> out;
+    if (mysql_query(conn.raw(), sql.c_str())) return out;
+    MYSQL_RES* res = mysql_store_result(conn.raw());
+    if (!res) return out;
+    while (MYSQL_ROW row = mysql_fetch_row(res)) {
+        out.push_back(nlohmann::json{
+            {"key", row[0] ? std::string(row[0]) : ""},
+            {"earned_at", row[1] ? std::string(row[1]) : ""},
+        });
+    }
+    mysql_free_result(res);
+    return out;
+}
+
+std::vector<nlohmann::json> UserRepository::list_wall_posts(uint64_t profile_owner_id, uint32_t limit, uint32_t offset) {
+    if (limit < 1) limit = 1;
+    if (limit > 50) limit = 50;
+    database::ScopedConnection conn(pool_);
+    std::string sql =
+        "SELECT p.id, p.body, p.created_at, u.id AS aid, u.username AS aname, u.avatar_url AS aavatar "
+        "FROM profile_wall_posts p INNER JOIN users u ON u.id=p.author_id "
+        "WHERE p.profile_owner_id=" + std::to_string(profile_owner_id)
+        + " ORDER BY p.created_at DESC LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
+    std::vector<nlohmann::json> out;
+    struct Row {
+        uint64_t    pid{};
+        std::string body;
+        std::string created_at;
+        uint64_t    aid{};
+        std::string aname;
+        std::string aavatar;
+    };
+    std::vector<Row> rows;
+    if (mysql_query(conn.raw(), sql.c_str())) return out;
+    MYSQL_RES* res = mysql_store_result(conn.raw());
+    if (!res) return out;
+    while (MYSQL_ROW row = mysql_fetch_row(res)) {
+        Row r;
+        r.pid        = row[0] ? std::stoull(row[0]) : 0;
+        r.body       = row[1] ? std::string(row[1]) : "";
+        r.created_at = row[2] ? std::string(row[2]) : "";
+        r.aid        = row[3] ? std::stoull(row[3]) : 0;
+        r.aname      = row[4] ? std::string(row[4]) : "";
+        r.aavatar    = row[5] ? std::string(row[5]) : "";
+        rows.push_back(std::move(r));
+    }
+    mysql_free_result(res);
+
+    std::unordered_map<uint64_t, nlohmann::json> mentions_by_post;
+    if (!rows.empty()) {
+        std::ostringstream ids;
+        for (size_t i = 0; i < rows.size(); ++i) {
+            if (i) ids << ",";
+            ids << rows[i].pid;
+        }
+        std::string mq =
+            "SELECT m.post_id, m.mention_kind, m.mentioned_user_id, m.mentioned_clip_id, u.username AS mun "
+            "FROM profile_wall_mentions m LEFT JOIN users u ON u.id=m.mentioned_user_id WHERE m.post_id IN ("
+            + ids.str() + ")";
+        if (mysql_query(conn.raw(), mq.c_str()) == 0) {
+            MYSQL_RES* mr = mysql_store_result(conn.raw());
+            if (mr) {
+                while (MYSQL_ROW r2 = mysql_fetch_row(mr)) {
+                    uint64_t pid = r2[0] ? std::stoull(r2[0]) : 0;
+                    nlohmann::json m;
+                    m["kind"] = r2[1] ? std::string(r2[1]) : "";
+                    if (r2[2]) m["user_id"] = std::stoull(r2[2]);
+                    if (r2[3]) m["clip_id"] = std::stoull(r2[3]);
+                    if (r2[4] && r2[4][0]) m["username"] = std::string(r2[4]);
+                    if (mentions_by_post.find(pid) == mentions_by_post.end())
+                        mentions_by_post[pid] = nlohmann::json::array();
+                    mentions_by_post[pid].push_back(std::move(m));
+                }
+                mysql_free_result(mr);
+            }
+        }
+    }
+
+    for (const auto& r : rows) {
+        nlohmann::json mentions = nlohmann::json::array();
+        auto it = mentions_by_post.find(r.pid);
+        if (it != mentions_by_post.end()) mentions = it->second;
+        out.push_back(nlohmann::json{
+            {"id", r.pid},
+            {"body", r.body},
+            {"created_at", r.created_at},
+            {"author",
+             {{"id", r.aid}, {"username", r.aname}, {"avatar_url", r.aavatar}}},
+            {"mentions", std::move(mentions)},
+        });
+    }
+    return out;
+}
+
+std::vector<uint64_t> UserRepository::wall_post_mentioned_user_ids(uint64_t post_id) {
+    std::vector<uint64_t> out;
+    if (post_id == 0) return out;
+    database::ScopedConnection conn(pool_);
+    std::string sql = "SELECT mentioned_user_id FROM profile_wall_mentions WHERE post_id=" + std::to_string(post_id)
+        + " AND mention_kind='user' AND mentioned_user_id IS NOT NULL";
+    if (mysql_query(conn.raw(), sql.c_str())) return out;
+    MYSQL_RES* res = mysql_store_result(conn.raw());
+    if (!res) return out;
+    while (MYSQL_ROW row = mysql_fetch_row(res)) {
+        if (row[0]) out.push_back(std::stoull(row[0]));
+    }
+    mysql_free_result(res);
+    return out;
+}
+
+std::optional<uint64_t> UserRepository::create_wall_post(uint64_t author_id, uint64_t profile_owner_id,
+                                                         const std::string& body) {
+    if (author_id == 0 || profile_owner_id == 0 || author_id != profile_owner_id) return std::nullopt;
+    if (body.empty() || body.size() > 4000) return std::nullopt;
+    database::ScopedConnection conn(pool_);
+    auto esc = [&](const std::string& s) { return database::escape(conn.raw(), s); };
+    std::string sql = "INSERT INTO profile_wall_posts (profile_owner_id, author_id, body) VALUES ("
+        + std::to_string(profile_owner_id) + "," + std::to_string(author_id) + ",'" + esc(body) + "')";
+    if (!mysql_exec_ok(conn.raw(), sql)) return std::nullopt;
+    uint64_t post_id = static_cast<uint64_t>(mysql_insert_id(conn.raw()));
+    if (post_id == 0) return std::nullopt;
+
+    auto is_user_char = [](char ch) {
+        return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_';
+    };
+    size_t i = 0;
+    while (i < body.size()) {
+        if (body[i] != '@') {
+            ++i;
+            continue;
+        }
+        size_t j = i + 1;
+        if (j + 5 <= body.size() && body.compare(j, 5, "clip/") == 0) {
+            j += 5;
+            size_t k = j;
+            while (k < body.size() && body[k] >= '0' && body[k] <= '9') ++k;
+            if (k > j) {
+                uint64_t cid = std::stoull(body.substr(j, k - j));
+                std::string ck = "SELECT id FROM clips WHERE id=" + std::to_string(cid) + " LIMIT 1";
+                if (mysql_query(conn.raw(), ck.c_str()) == 0) {
+                    MYSQL_RES* rs = mysql_store_result(conn.raw());
+                    bool ok = rs && mysql_fetch_row(rs);
+                    if (rs) mysql_free_result(rs);
+                    if (ok) {
+                        std::string ins =
+                            "INSERT INTO profile_wall_mentions (post_id, mention_kind, mentioned_user_id, mentioned_clip_id) VALUES ("
+                            + std::to_string(post_id) + ",'clip',NULL," + std::to_string(cid) + ")";
+                        mysql_query(conn.raw(), ins.c_str());
+                    }
+                }
+            }
+            i = k;
+            continue;
+        }
+        size_t start = j;
+        while (j < body.size() && is_user_char(body[j])) ++j;
+        if (j - start >= 2 && j - start <= 32) {
+            std::string uname = body.substr(start, j - start);
+            std::string qu = "SELECT id FROM users WHERE account_blocked=0 AND username='" + esc(uname) + "' LIMIT 1";
+            if (mysql_query(conn.raw(), qu.c_str()) == 0) {
+                MYSQL_RES* rs = mysql_store_result(conn.raw());
+                MYSQL_ROW rw = rs ? mysql_fetch_row(rs) : nullptr;
+                uint64_t uid = 0;
+                if (rw && rw[0]) uid = std::stoull(rw[0]);
+                if (rs) mysql_free_result(rs);
+                if (uid > 0 && uid != author_id) {
+                    std::string ins =
+                        "INSERT INTO profile_wall_mentions (post_id, mention_kind, mentioned_user_id, mentioned_clip_id) VALUES ("
+                        + std::to_string(post_id) + ",'user'," + std::to_string(uid) + ",NULL)";
+                    mysql_query(conn.raw(), ins.c_str());
+                }
+            }
+        }
+        i = j;
+    }
+    return post_id;
 }
 
 } // namespace clipstream::repositories

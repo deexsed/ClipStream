@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Eye, RefreshCw } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Eye, RefreshCw, Flame, Compass, Rows3 } from 'lucide-react';
 import { clips as clipsApi } from '../../api/client';
 import { useClipLangStore } from '../../store/useClipLangStore';
 
@@ -16,16 +16,65 @@ function formatViews(n) {
   return String(n);
 }
 
+/** Боковая колонка: похожие клипы; при пустом related — популярное в игре/общее + явные шаги «куда дальше». */
 export default function RecommendedClips({ currentClipId, onQueueChange }) {
   const [recs, setRecs] = useState([]);
   const [busy, setBusy] = useState(false);
+  /** related | fallback | none */
+  const [listSource, setListSource] = useState('related');
+  const [categoryGameId, setCategoryGameId] = useState(0);
   const navigate = useNavigate();
   const clipLangKey = useClipLangStore((s) => s.codes.join(','));
   const mixRef = useRef(0);
+  const fallbackOffsetRef = useRef(0);
 
-  const load = useCallback(
-    (newMix, excludeIds = null) => {
+  const loadFallback = useCallback(
+    async (offset = 0) => {
+      let gameId = 0;
+      try {
+        const meta = await clipsApi.get(String(currentClipId));
+        gameId = Number(meta.game_id) || 0;
+        setCategoryGameId(gameId);
+      } catch {
+        setCategoryGameId(0);
+      }
+      const params = new URLSearchParams({
+        sort: 'popular',
+        period: 'week',
+        limit: '20',
+        offset: String(offset),
+      });
+      if (gameId > 0) params.set('game_id', String(gameId));
+      const data = await clipsApi.feed(params.toString());
+      const raw = (data.clips || []).filter((c) => c.id !== currentClipId);
+      return raw.slice(0, 10);
+    },
+    [currentClipId],
+  );
+
+  const runLoad = useCallback(
+    async (opts = {}) => {
+      const { newMix, excludeIds, fallbackOnly, fallbackShuffle } = opts;
       if (!currentClipId) return;
+
+      if (fallbackOnly) {
+        setBusy(true);
+        if (fallbackShuffle) {
+          fallbackOffsetRef.current = Math.floor(Math.random() * 4) * 15;
+        }
+        try {
+          const list = await loadFallback(fallbackOffsetRef.current);
+          setRecs(list);
+          setListSource(list.length > 0 ? 'fallback' : 'none');
+        } catch {
+          setRecs([]);
+          setListSource('none');
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+
       let mix;
       if (newMix != null) {
         mix = newMix;
@@ -36,6 +85,7 @@ export default function RecommendedClips({ currentClipId, onQueueChange }) {
       }
       setBusy(true);
       if (newMix != null) setRecs([]);
+
       const params = new URLSearchParams({
         limit: '32',
         mix: String(mix),
@@ -45,39 +95,90 @@ export default function RecommendedClips({ currentClipId, onQueueChange }) {
         const ex = [...new Set([String(currentClipId), ...excludeIds.map(String)])].join(',');
         params.set('exclude', ex);
       }
-      clipsApi
-        .related(currentClipId, params.toString())
-        .then((data) => {
-          const raw = (data.clips || []).filter((c) => c.id !== currentClipId);
+
+      try {
+        const data = await clipsApi.related(currentClipId, params.toString());
+        const raw = (data.clips || []).filter((c) => c.id !== currentClipId);
+        if (raw.length > 0) {
           setRecs(raw.slice(0, 10));
-        })
-        .catch(() => setRecs([]))
-        .finally(() => setBusy(false));
+          setListSource('related');
+          try {
+            const meta = await clipsApi.get(String(currentClipId));
+            setCategoryGameId(Number(meta.game_id) || 0);
+          } catch {
+            setCategoryGameId(0);
+          }
+        } else {
+          fallbackOffsetRef.current = 0;
+          const list = await loadFallback(0);
+          setRecs(list);
+          setListSource(list.length > 0 ? 'fallback' : 'none');
+        }
+      } catch {
+        fallbackOffsetRef.current = 0;
+        try {
+          const list = await loadFallback(0);
+          setRecs(list);
+          setListSource(list.length > 0 ? 'fallback' : 'none');
+        } catch {
+          setRecs([]);
+          setListSource('none');
+        }
+      } finally {
+        setBusy(false);
+      }
     },
-    [currentClipId],
+    [currentClipId, loadFallback],
   );
 
   useEffect(() => {
     mixRef.current = 0;
-    load();
-  }, [currentClipId, clipLangKey, load]);
+    fallbackOffsetRef.current = 0;
+    setListSource('related');
+    void runLoad();
+  }, [currentClipId, clipLangKey, runLoad]);
 
   useEffect(() => {
     onQueueChange?.(recs);
   }, [recs, onQueueChange]);
 
+  const onRefreshClick = () => {
+    if (listSource === 'related' && recs.length > 0) {
+      void runLoad({ newMix: Math.floor(Math.random() * 1_000_000_000), excludeIds: recs.map((c) => c.id) });
+    } else {
+      void runLoad({ fallbackOnly: true, fallbackShuffle: true });
+    }
+  };
+
   if (!currentClipId) return null;
-  if (!busy && recs.length === 0) return null;
+
+  const title =
+    listSource === 'related'
+      ? 'Похожее'
+      : listSource === 'fallback'
+        ? 'Популярное рядом'
+        : 'Куда дальше';
+  const subtitle =
+    listSource === 'fallback'
+      ? 'Похожих почти нет — показываем хиты в этой категории или на сайте.'
+      : listSource === 'none'
+        ? 'Не удалось подобрать ролики в колонку — откройте ленту или тренды.'
+        : null;
+
+  const feedStart = `/feed?start=${encodeURIComponent(String(currentClipId))}`;
 
   return (
     <div className="rounded-2xl border border-brand-700/45 bg-gradient-to-b from-brand-900/70 to-brand-950/90 p-4 shadow-xl shadow-black/20">
-      <div className="flex items-center justify-between gap-2 mb-4">
-        <h3 className="font-bold text-white text-sm tracking-tight">Похожее</h3>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="min-w-0">
+          <h3 className="font-bold text-white text-sm tracking-tight">{title}</h3>
+          {subtitle ? <p className="text-[11px] text-gray-500 mt-1 leading-snug">{subtitle}</p> : null}
+        </div>
         <button
           type="button"
           disabled={busy}
-          onClick={() => load(Math.floor(Math.random() * 1_000_000_000), recs.map((c) => c.id))}
-          className="inline-flex items-center gap-1.5 text-[11px] text-brand-300 hover:text-white px-2 py-1 rounded-lg border border-brand-700/60 bg-brand-950/50 disabled:opacity-40"
+          onClick={onRefreshClick}
+          className="inline-flex items-center gap-1.5 text-[11px] text-brand-300 hover:text-white px-2 py-1 rounded-lg border border-brand-700/60 bg-brand-950/50 disabled:opacity-40 shrink-0"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
           Другие
@@ -140,6 +241,43 @@ export default function RecommendedClips({ currentClipId, onQueueChange }) {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="mt-4 pt-3 border-t border-brand-700/40 space-y-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Дальше по сайту</p>
+        <div className="flex flex-col gap-1.5">
+          <Link
+            to={feedStart}
+            className="inline-flex items-center gap-2 text-xs font-medium text-brand-300 hover:text-white transition-colors py-1.5"
+          >
+            <Rows3 className="w-3.5 h-3.5 shrink-0" />
+            Продолжить в вертикальной ленте
+          </Link>
+          <Link
+            to="/trends"
+            className="inline-flex items-center gap-2 text-xs font-medium text-amber-400/90 hover:text-amber-300 transition-colors py-1.5"
+          >
+            <Flame className="w-3.5 h-3.5 shrink-0" />
+            Тренды
+          </Link>
+          {categoryGameId > 0 ? (
+            <Link
+              to={`/category/${categoryGameId}`}
+              className="inline-flex items-center gap-2 text-xs font-medium text-gray-400 hover:text-white transition-colors py-1.5"
+            >
+              <Compass className="w-3.5 h-3.5 shrink-0" />
+              Ещё в этой категории
+            </Link>
+          ) : (
+            <Link
+              to="/categories"
+              className="inline-flex items-center gap-2 text-xs font-medium text-gray-400 hover:text-white transition-colors py-1.5"
+            >
+              <Compass className="w-3.5 h-3.5 shrink-0" />
+              Все категории
+            </Link>
+          )}
+        </div>
       </div>
     </div>
   );

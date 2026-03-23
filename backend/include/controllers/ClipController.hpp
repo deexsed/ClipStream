@@ -19,6 +19,10 @@ private:
     server::Response handle_clip_trend_ranks(const server::Request& req);
     server::Response handle_related_clips(const server::Request& req);
     server::Response handle_search(const server::Request& req);
+    server::Response handle_discussed_clips(const server::Request& req);
+    server::Response handle_continue_watching(const server::Request& req);
+    server::Response handle_channel_updates(const server::Request& req);
+    server::Response handle_random_clip(const server::Request& req);
     server::Response handle_view(const server::Request& req);
     server::Response handle_clip_engagement(const server::Request& req);
     server::Response handle_clip_feedback(const server::Request& req);

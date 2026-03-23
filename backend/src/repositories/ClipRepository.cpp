@@ -47,6 +47,15 @@ void append_in_quoted(std::ostringstream& sql, const std::vector<std::string>& v
     }
 }
 
+/// Агрегаты активности на ClipStream (не Twitch): просмотры, комментарии, лайки/дизлайки.
+const char* k_clip_platform_aggr_join =
+    "LEFT JOIN (SELECT clip_id, COUNT(*) AS plat_pv FROM view_history GROUP BY clip_id) _plat_v ON _plat_v.clip_id=c.id "
+    "LEFT JOIN (SELECT clip_id, COUNT(*) AS plat_pc FROM comments GROUP BY clip_id) _plat_c ON _plat_c.clip_id=c.id "
+    "LEFT JOIN (SELECT clip_id, "
+    "SUM(CASE WHEN is_like=1 THEN 1 ELSE 0 END) AS plat_pl, "
+    "SUM(CASE WHEN is_like=0 THEN 1 ELSE 0 END) AS plat_pd "
+    "FROM likes GROUP BY clip_id) _plat_l ON _plat_l.clip_id=c.id ";
+
 void append_public_feed_filters(std::ostringstream& sql, const FeedMuteSet* mutes,
                                 const std::function<std::string(const std::string&)>& esc) {
     sql << " AND c.unavailable_at IS NULL";
@@ -330,11 +339,13 @@ std::vector<models::Clip> ClipRepository::find_filtered(const ClipFilter& filter
             for (size_t i = 0; i < terms.size(); ++i) {
                 if (i) sql << " OR ";
                 sql << "c.title LIKE '%" << esc(terms[i]) << "%' "
-                    << "OR c.broadcaster_name LIKE '%" << esc(terms[i]) << "%'";
+                    << "OR c.broadcaster_name LIKE '%" << esc(terms[i]) << "%' "
+                    << "OR c.clip_creator_login LIKE '%" << esc(terms[i]) << "%'";
             }
         } else {
             sql << "c.title LIKE '%" << esc(filter.search) << "%' "
-                << "OR c.broadcaster_name LIKE '%" << esc(filter.search) << "%'";
+                << "OR c.broadcaster_name LIKE '%" << esc(filter.search) << "%' "
+                << "OR c.clip_creator_login LIKE '%" << esc(filter.search) << "%'";
         }
         sql << ")";
     }
@@ -354,9 +365,11 @@ std::vector<models::Clip> ClipRepository::find_filtered(const ClipFilter& filter
             sql << " AND c.view_count >= 30";
             break;
         case TimePeriod::All:
-            // For category/channel pages we should not hide all low-view clips.
-            if (filter.game_id > 0 || !filter.broadcaster_name.empty()) sql << " AND c.view_count >= 2";
-            else sql << " AND c.view_count >= 50";
+            // For category/channel/search we should not hide low-view clips.
+            if (filter.game_id > 0 || !filter.broadcaster_name.empty() || !filter.search.empty())
+                sql << " AND c.view_count >= 2";
+            else
+                sql << " AND c.view_count >= 50";
             break;
     }
 
@@ -368,14 +381,17 @@ std::vector<models::Clip> ClipRepository::find_filtered(const ClipFilter& filter
             for (size_t i = 0; i < terms.size(); ++i) {
                 if (i) score << " + ";
                 score << "(CASE WHEN c.title LIKE '%" << esc(terms[i]) << "%' THEN 30 ELSE 0 END)"
-                      << " + (CASE WHEN c.broadcaster_name LIKE '%" << esc(terms[i]) << "%' THEN 12 ELSE 0 END)";
+                      << " + (CASE WHEN c.broadcaster_name LIKE '%" << esc(terms[i]) << "%' THEN 12 ELSE 0 END)"
+                      << " + (CASE WHEN c.clip_creator_login LIKE '%" << esc(terms[i]) << "%' THEN 10 ELSE 0 END)";
             }
         } else {
             score << "(CASE WHEN c.title LIKE '%" << esc(filter.search) << "%' THEN 30 ELSE 0 END)"
-                  << " + (CASE WHEN c.broadcaster_name LIKE '%" << esc(filter.search) << "%' THEN 12 ELSE 0 END)";
+                  << " + (CASE WHEN c.broadcaster_name LIKE '%" << esc(filter.search) << "%' THEN 12 ELSE 0 END)"
+                  << " + (CASE WHEN c.clip_creator_login LIKE '%" << esc(filter.search) << "%' THEN 10 ELSE 0 END)";
         }
         score << " + (CASE WHEN c.title LIKE '%" << esc(filter.search) << "%' THEN 18 ELSE 0 END)"
-              << " + (CASE WHEN c.broadcaster_name LIKE '%" << esc(filter.search) << "%' THEN 8 ELSE 0 END)";
+              << " + (CASE WHEN c.broadcaster_name LIKE '%" << esc(filter.search) << "%' THEN 8 ELSE 0 END)"
+              << " + (CASE WHEN c.clip_creator_login LIKE '%" << esc(filter.search) << "%' THEN 6 ELSE 0 END)";
         score << ")";
         search_score = score.str();
     }
@@ -464,11 +480,13 @@ std::vector<models::Clip> ClipRepository::search(const std::string& query,
     if (!terms.empty()) {
         for (const auto& term : terms) {
             sql << "OR c.title LIKE '%" << esc(term) << "%' "
-                << "OR c.broadcaster_name LIKE '%" << esc(term) << "%' ";
+                << "OR c.broadcaster_name LIKE '%" << esc(term) << "%' "
+                << "OR c.clip_creator_login LIKE '%" << esc(term) << "%' ";
         }
     } else {
         sql << "OR c.title LIKE '%" << q << "%' "
-            << "OR c.broadcaster_name LIKE '%" << q << "%' ";
+            << "OR c.broadcaster_name LIKE '%" << q << "%' "
+            << "OR c.clip_creator_login LIKE '%" << q << "%' ";
     }
     sql << ") ";
     append_public_feed_filters(sql, mutes, esc);
@@ -479,14 +497,17 @@ std::vector<models::Clip> ClipRepository::search(const std::string& query,
         for (size_t i = 0; i < terms.size(); ++i) {
             if (i) score << " + ";
             score << "(CASE WHEN c.title LIKE '%" << esc(terms[i]) << "%' THEN 35 ELSE 0 END)"
-                  << " + (CASE WHEN c.broadcaster_name LIKE '%" << esc(terms[i]) << "%' THEN 14 ELSE 0 END)";
+                  << " + (CASE WHEN c.broadcaster_name LIKE '%" << esc(terms[i]) << "%' THEN 14 ELSE 0 END)"
+                  << " + (CASE WHEN c.clip_creator_login LIKE '%" << esc(terms[i]) << "%' THEN 12 ELSE 0 END)";
         }
     } else {
         score << "(CASE WHEN c.title LIKE '%" << q << "%' THEN 35 ELSE 0 END)"
-              << " + (CASE WHEN c.broadcaster_name LIKE '%" << q << "%' THEN 14 ELSE 0 END)";
+              << " + (CASE WHEN c.broadcaster_name LIKE '%" << q << "%' THEN 14 ELSE 0 END)"
+              << " + (CASE WHEN c.clip_creator_login LIKE '%" << q << "%' THEN 12 ELSE 0 END)";
     }
     score << " + (CASE WHEN c.title LIKE '%" << q << "%' THEN 20 ELSE 0 END)"
           << " + (CASE WHEN c.broadcaster_name LIKE '%" << q << "%' THEN 10 ELSE 0 END)"
+          << " + (CASE WHEN c.clip_creator_login LIKE '%" << q << "%' THEN 8 ELSE 0 END)"
           << ")";
 
     sql << " ORDER BY " << score.str() << " DESC, c.view_count DESC, "
@@ -509,6 +530,135 @@ std::vector<models::Clip> ClipRepository::search(const std::string& query,
     return clips;
 }
 
+std::vector<models::Clip> ClipRepository::find_discussed_clips(uint32_t hours, uint32_t limit, const FeedMuteSet* mutes,
+                                                             bool with_tags) {
+    if (hours < 1) hours = 1;
+    if (hours > 168) hours = 168;
+    if (limit < 1) limit = 1;
+    if (limit > 48) limit = 48;
+    database::ScopedConnection conn(pool_);
+    auto esc = [&](const std::string& s) { return database::escape(conn.raw(), s); };
+    std::ostringstream sql;
+    sql << "SELECT c.*, g.name AS game_name FROM clips c "
+        << "LEFT JOIN games g ON c.game_id=g.id "
+        << "INNER JOIN ("
+        << "SELECT clip_id, COUNT(*) AS discussion_count FROM comments "
+        << "WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL " << hours
+        << " HOUR) "
+        << "GROUP BY clip_id HAVING discussion_count >= 2"
+        << ") dc ON dc.clip_id=c.id "
+        << "WHERE 1=1 ";
+    append_public_feed_filters(sql, mutes, esc);
+    sql << " ORDER BY dc.discussion_count DESC LIMIT " << limit;
+
+    if (mysql_query(conn.raw(), sql.str().c_str())) return {};
+
+    MYSQL_RES* res = mysql_store_result(conn.raw());
+    if (!res) return {};
+
+    std::vector<models::Clip> clips;
+    while (MYSQL_ROW row = mysql_fetch_row(res)) {
+        auto c = row_to_clip(row, res);
+        if (with_tags) c.tags = load_tags(c.id);
+        clips.push_back(std::move(c));
+    }
+    mysql_free_result(res);
+    return clips;
+}
+
+std::vector<models::Clip> ClipRepository::find_continue_watching(uint64_t user_id, uint32_t limit,
+                                                                   const FeedMuteSet* mutes, bool with_tags) {
+    if (user_id == 0) return {};
+    if (limit < 1) limit = 1;
+    if (limit > 36) limit = 36;
+    database::ScopedConnection conn(pool_);
+    auto esc = [&](const std::string& s) { return database::escape(conn.raw(), s); };
+    std::ostringstream sql;
+    sql << "SELECT c.*, g.name AS game_name FROM user_clip_engagement uce "
+        << "INNER JOIN clips c ON c.id = uce.clip_id "
+        << "LEFT JOIN games g ON c.game_id = g.id "
+        << "WHERE uce.user_id=" << user_id
+        << " AND uce.watch_time_sec >= 5 AND uce.completion_ratio < 0.88 "
+        << " AND uce.updated_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 DAY) ";
+    append_public_feed_filters(sql, mutes, esc);
+    sql << " ORDER BY uce.updated_at DESC LIMIT " << limit;
+
+    if (mysql_query(conn.raw(), sql.str().c_str())) return {};
+    MYSQL_RES* res = mysql_store_result(conn.raw());
+    if (!res) return {};
+    std::vector<models::Clip> clips;
+    while (MYSQL_ROW row = mysql_fetch_row(res)) {
+        auto c = row_to_clip(row, res);
+        if (with_tags) c.tags = load_tags(c.id);
+        clips.push_back(std::move(c));
+    }
+    mysql_free_result(res);
+    return clips;
+}
+
+std::vector<models::Clip> ClipRepository::find_clips_from_visited_channels(uint64_t user_id, uint32_t visit_days,
+                                                                           uint32_t clip_days, uint32_t limit,
+                                                                           const FeedMuteSet* mutes, bool with_tags) {
+    if (user_id == 0) return {};
+    if (visit_days < 1) visit_days = 1;
+    if (visit_days > 60) visit_days = 60;
+    if (clip_days < 1) clip_days = 1;
+    if (clip_days > 30) clip_days = 30;
+    if (limit < 1) limit = 1;
+    if (limit > 36) limit = 36;
+    database::ScopedConnection conn(pool_);
+    auto esc = [&](const std::string& s) { return database::escape(conn.raw(), s); };
+    std::ostringstream sql;
+    sql << "SELECT c.*, g.name AS game_name FROM clips c "
+        << "LEFT JOIN games g ON c.game_id = g.id "
+        << "WHERE c.broadcaster_id IN ("
+        << "SELECT DISTINCT c2.broadcaster_id FROM view_history vh "
+        << "INNER JOIN clips c2 ON c2.id = vh.clip_id "
+        << "WHERE vh.user_id=" << user_id << " AND vh.viewed_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL " << visit_days
+        << " DAY) "
+        << "AND c2.broadcaster_id IS NOT NULL AND TRIM(c2.broadcaster_id) <> '') "
+        << "AND COALESCE(c.twitch_created_ts, c.created_at) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL " << clip_days
+        << " DAY) ";
+    append_public_feed_filters(sql, mutes, esc);
+    sql << " ORDER BY COALESCE(c.twitch_created_ts, c.created_at) DESC LIMIT " << limit;
+
+    if (mysql_query(conn.raw(), sql.str().c_str())) return {};
+    MYSQL_RES* res = mysql_store_result(conn.raw());
+    if (!res) return {};
+    std::vector<models::Clip> clips;
+    while (MYSQL_ROW row = mysql_fetch_row(res)) {
+        auto c = row_to_clip(row, res);
+        if (with_tags) c.tags = load_tags(c.id);
+        clips.push_back(std::move(c));
+    }
+    mysql_free_result(res);
+    return clips;
+}
+
+std::optional<models::Clip> ClipRepository::find_random_clip(const FeedMuteSet* mutes, bool with_tags) {
+    database::ScopedConnection conn(pool_);
+    auto esc = [&](const std::string& s) { return database::escape(conn.raw(), s); };
+    std::ostringstream sql;
+    sql << "SELECT c.*, g.name AS game_name FROM clips c "
+        << "LEFT JOIN games g ON c.game_id = g.id "
+        << "WHERE c.view_count >= 2 ";
+    append_public_feed_filters(sql, mutes, esc);
+    sql << " ORDER BY RAND() LIMIT 1";
+
+    if (mysql_query(conn.raw(), sql.str().c_str())) return std::nullopt;
+    MYSQL_RES* res = mysql_store_result(conn.raw());
+    if (!res) return std::nullopt;
+    MYSQL_ROW row = mysql_fetch_row(res);
+    if (!row) {
+        mysql_free_result(res);
+        return std::nullopt;
+    }
+    auto c = row_to_clip(row, res);
+    mysql_free_result(res);
+    if (with_tags) c.tags = load_tags(c.id);
+    return c;
+}
+
 std::vector<models::Clip> ClipRepository::find_hot(uint32_t limit, const std::vector<uint64_t>& exclude_clip_ids,
                                                    const std::vector<uint64_t>& preferred_games,
                                                    const std::vector<std::string>& preferred_broadcasters,
@@ -522,6 +672,7 @@ std::vector<models::Clip> ClipRepository::find_hot(uint32_t limit, const std::ve
     std::ostringstream sql;
     sql << "SELECT c.*, g.name AS game_name FROM clips c "
         << "LEFT JOIN games g ON c.game_id=g.id "
+        << k_clip_platform_aggr_join
         << "LEFT JOIN " << promo_boost_subquery("'all','hot','feed'") << " ON promo.clip_id=c.id "
         << "WHERE ("
         << "(c.twitch_created_ts IS NOT NULL AND c.twitch_created_ts >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY)) "
@@ -536,6 +687,9 @@ std::vector<models::Clip> ClipRepository::find_hot(uint32_t limit, const std::ve
     append_public_feed_filters(sql, mutes, esc);
     sql << "ORDER BY ("
         << "(c.view_count / GREATEST(1, TIMESTAMPDIFF(HOUR, " << clip_when << ", UTC_TIMESTAMP())))"
+        << " + LOG(1 + GREATEST(0, COALESCE(_plat_v.plat_pv,0))) * " << weights.rec_platform_view_weight
+        << " + LOG(1 + GREATEST(0, COALESCE(_plat_c.plat_pc,0))) * " << weights.rec_platform_comment_weight
+        << " + COALESCE(_plat_l.plat_pl,0) * " << (weights.rec_like_weight * 0.35)
         << " + COALESCE(promo.promo_boost, 0)";
     if (!preferred_games.empty()) {
         sql << " + CASE WHEN c.game_id IN (";
@@ -569,9 +723,11 @@ std::vector<models::Clip> ClipRepository::find_fresh_random(uint32_t limit, cons
     auto esc = [&](const std::string& s) { return database::escape(conn.raw(), s); };
     const char* twitch_dt = "STR_TO_DATE(c.twitch_created_at, '%Y-%m-%dT%H:%i:%sZ')";
 
+    RecommendationWeights plat_w;
     std::ostringstream sql;
     sql << "SELECT c.*, g.name AS game_name FROM clips c "
         << "LEFT JOIN games g ON c.game_id=g.id "
+        << k_clip_platform_aggr_join
         << "LEFT JOIN " << promo_boost_subquery("'all','fresh','feed'") << " ON promo.clip_id=c.id "
         << "WHERE ("
         << "(c.twitch_created_ts IS NOT NULL AND c.twitch_created_ts >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 DAY)) "
@@ -589,7 +745,11 @@ std::vector<models::Clip> ClipRepository::find_fresh_random(uint32_t limit, cons
         sql << ") ";
     }
     append_public_feed_filters(sql, mutes, esc);
-    sql << "ORDER BY (COALESCE(promo.promo_boost,0) * 10.0 + LEAST(500.0, c.view_count) * 0.12 + RAND() * 42.0) DESC "
+    sql << "ORDER BY (COALESCE(promo.promo_boost,0) * 10.0 + LEAST(500.0, c.view_count) * 0.12 "
+        << "+ LOG(1 + GREATEST(0, COALESCE(_plat_v.plat_pv,0))) * " << plat_w.rec_platform_view_weight
+        << "+ LOG(1 + GREATEST(0, COALESCE(_plat_c.plat_pc,0))) * " << plat_w.rec_platform_comment_weight
+        << "+ COALESCE(_plat_l.plat_pl,0) * " << (plat_w.rec_like_weight * 0.25)
+        << "+ RAND() * 42.0) DESC "
         << "LIMIT " << limit;
 
     if (mysql_query(conn.raw(), sql.str().c_str())) return {};
@@ -646,9 +806,10 @@ std::vector<models::Clip> ClipRepository::find_recommended(uint32_t limit, const
     std::ostringstream sql;
     sql << "SELECT c.*, g.name AS game_name FROM clips c "
         << "LEFT JOIN games g ON c.game_id=g.id "
+        << k_clip_platform_aggr_join
         << "LEFT JOIN feature_store_clip f ON f.clip_id=c.id " << aff_join.str() << eng_join.str() << "LEFT JOIN "
         << promo_boost_subquery("'all','recommended','feed'") << " ON promo.clip_id=c.id "
-        << "WHERE c.view_count >= 2 "
+        << "WHERE (c.view_count >= 2 OR COALESCE(_plat_v.plat_pv,0) >= 2 OR COALESCE(_plat_c.plat_pc,0) >= 1 OR COALESCE(_plat_l.plat_pl,0) >= 1) "
         << "AND ((c.twitch_created_ts IS NOT NULL AND c.twitch_created_ts >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 56 DAY)) "
         << "OR (c.twitch_created_ts IS NULL AND c.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 56 DAY))) ";
     if (!exclude_clip_ids.empty()) {
@@ -658,12 +819,15 @@ std::vector<models::Clip> ClipRepository::find_recommended(uint32_t limit, const
     }
     append_public_feed_filters(sql, mutes, esc);
     sql << "ORDER BY (c.view_count * " << weights.rec_view_weight
-        << " + c.like_count * " << weights.rec_like_weight
-        << " - c.dislike_count * " << weights.rec_dislike_weight
+        << " + COALESCE(_plat_l.plat_pl,0) * " << weights.rec_like_weight
+        << " - COALESCE(_plat_l.plat_pd,0) * " << weights.rec_dislike_weight
+        << " + LOG(1 + GREATEST(0, COALESCE(_plat_v.plat_pv,0))) * " << weights.rec_platform_view_weight
+        << " + LOG(1 + GREATEST(0, COALESCE(_plat_c.plat_pc,0))) * " << weights.rec_platform_comment_weight
         << " + GREATEST(0, " << weights.rec_freshness_weight << " - " << clip_age_h << ")"
         << " + COALESCE(f.velocity_score, c.view_count / GREATEST(1.0, " << clip_age_h << "/24.0)) * "
         << weights.rec_fs_velocity_weight
-        << " + COALESCE(f.er_like, c.like_count / GREATEST(1, c.view_count)) * " << weights.rec_fs_er_weight
+        << " + COALESCE(f.er_like, COALESCE(_plat_l.plat_pl,0) / GREATEST(1, COALESCE(_plat_v.plat_pv,0))) * "
+        << weights.rec_fs_er_weight
         << " + COALESCE(f.freshness_decay, EXP(-GREATEST(0, " << clip_age_h << ") / 168.0)) * "
         << weights.rec_fs_fresh_decay_weight
         << " + COALESCE(promo.promo_boost, 0) * 1.4";
@@ -958,10 +1122,11 @@ std::vector<models::Clip> ClipRepository::find_personalized(const ClipFilter& fi
     if (!filter.tag.empty()) {
         body << "FROM clips c "
              << "LEFT JOIN games g ON c.game_id=g.id "
+             << k_clip_platform_aggr_join
              << "JOIN clip_tags ct ON c.id=ct.clip_id "
              << "JOIN tags t ON ct.tag_id=t.id ";
     } else {
-        body << "FROM clips c LEFT JOIN games g ON c.game_id=g.id ";
+        body << "FROM clips c LEFT JOIN games g ON c.game_id=g.id " << k_clip_platform_aggr_join;
     }
     body << "WHERE 1=1 ";
     if (filter.game_id > 0) body << "AND c.game_id=" << filter.game_id << " ";
@@ -994,7 +1159,9 @@ std::vector<models::Clip> ClipRepository::find_personalized(const ClipFilter& fi
 
     std::ostringstream query;
     query << "SELECT c.*, g.name AS game_name, "
-          << "(c.view_count * 0.4 + c.like_count * 2.0 - c.dislike_count * 1.5 "
+          << "(c.view_count * 0.4 + COALESCE(_plat_l.plat_pl,0) * 2.0 - COALESCE(_plat_l.plat_pd,0) * 1.5 "
+          << "+ LOG(1 + GREATEST(0, COALESCE(_plat_v.plat_pv,0))) * 0.42 "
+          << "+ LOG(1 + GREATEST(0, COALESCE(_plat_c.plat_pc,0))) * 1.75 "
           << "+ GREATEST(0, 100 - TIMESTAMPDIFF(HOUR, STR_TO_DATE(c.twitch_created_at, '%Y-%m-%dT%H:%i:%sZ'), UTC_TIMESTAMP()))) AS score "
           << body.str();
     switch (filter.sort) {
@@ -1063,9 +1230,9 @@ std::vector<models::Clip> ClipRepository::find_friends_feed(uint64_t viewer_user
         << "LEFT JOIN games g ON c.game_id=g.id "
         << "INNER JOIN ("
         << " SELECT vh.clip_id, MAX(vh.viewed_at) AS mv "
-        << " FROM subscriptions s "
-        << " INNER JOIN view_history vh ON vh.user_id = s.followed_id "
-        << " WHERE s.follower_id = " << viewer_user_id
+        << " FROM friendships s "
+        << " INNER JOIN view_history vh ON vh.user_id = s.friend_id "
+        << " WHERE s.user_id = " << viewer_user_id
         << " GROUP BY vh.clip_id"
         << ") t ON t.clip_id = c.id "
         << "WHERE 1=1 ";
@@ -1306,41 +1473,63 @@ bool ClipRepository::update_like_count(uint64_t id, int like_delta, int dislike_
     return mysql_query(conn.raw(), sql.c_str()) == 0;
 }
 
-bool ClipRepository::upsert_user_like(uint64_t user_id, uint64_t clip_id, bool want_like) {
+LikeUpsertResult ClipRepository::upsert_user_like(uint64_t user_id, uint64_t clip_id, bool want_like) {
+    LikeUpsertResult out;
     database::ScopedConnection conn(pool_);
     std::string q =
         "SELECT is_like FROM likes WHERE user_id=" + std::to_string(user_id)
         + " AND clip_id=" + std::to_string(clip_id) + " LIMIT 1";
-    if (mysql_query(conn.raw(), q.c_str()) != 0) return false;
+    if (mysql_query(conn.raw(), q.c_str()) != 0) return out;
     MYSQL_RES* res = mysql_store_result(conn.raw());
-    if (!res) return false;
+    if (!res) return out;
     MYSQL_ROW row = mysql_fetch_row(res);
     const bool has_row = row && row[0];
     const bool cur_like = has_row && (std::atoi(row[0]) != 0);
     mysql_free_result(res);
 
+    constexpr int kRepLike    = 2;
+    constexpr int kRepDislike = -1;
+
     if (!has_row) {
         std::string ins = "INSERT INTO likes (user_id, clip_id, is_like) VALUES ("
             + std::to_string(user_id) + "," + std::to_string(clip_id) + "," + (want_like ? "1" : "0") + ")";
-        if (mysql_query(conn.raw(), ins.c_str()) != 0) return false;
-        if (want_like)
-            return update_like_count(clip_id, 1, 0);
-        return update_like_count(clip_id, 0, 1);
+        if (mysql_query(conn.raw(), ins.c_str()) != 0) return out;
+        if (want_like) {
+            if (!update_like_count(clip_id, 1, 0)) return out;
+            out.author_reputation_delta = kRepLike;
+        } else {
+            if (!update_like_count(clip_id, 0, 1)) return out;
+            out.author_reputation_delta = kRepDislike;
+        }
+        out.ok = true;
+        return out;
     }
     if (cur_like == want_like) {
         std::string del = "DELETE FROM likes WHERE user_id=" + std::to_string(user_id)
             + " AND clip_id=" + std::to_string(clip_id);
-        if (mysql_query(conn.raw(), del.c_str()) != 0) return false;
-        if (cur_like)
-            return update_like_count(clip_id, -1, 0);
-        return update_like_count(clip_id, 0, -1);
+        if (mysql_query(conn.raw(), del.c_str()) != 0) return out;
+        if (cur_like) {
+            if (!update_like_count(clip_id, -1, 0)) return out;
+            out.author_reputation_delta = -kRepLike;
+        } else {
+            if (!update_like_count(clip_id, 0, -1)) return out;
+            out.author_reputation_delta = -kRepDislike;
+        }
+        out.ok = true;
+        return out;
     }
     std::string upd = "UPDATE likes SET is_like=" + std::string(want_like ? "1" : "0")
         + " WHERE user_id=" + std::to_string(user_id) + " AND clip_id=" + std::to_string(clip_id);
-    if (mysql_query(conn.raw(), upd.c_str()) != 0) return false;
-    if (want_like)
-        return update_like_count(clip_id, 1, -1);
-    return update_like_count(clip_id, -1, 1);
+    if (mysql_query(conn.raw(), upd.c_str()) != 0) return out;
+    if (want_like) {
+        if (!update_like_count(clip_id, 1, -1)) return out;
+        out.author_reputation_delta = kRepLike - kRepDislike;
+    } else {
+        if (!update_like_count(clip_id, -1, 1)) return out;
+        out.author_reputation_delta = kRepDislike - kRepLike;
+    }
+    out.ok = true;
+    return out;
 }
 
 std::optional<bool> ClipRepository::get_user_vote(uint64_t user_id, uint64_t clip_id) {
@@ -1575,10 +1764,10 @@ std::vector<std::string> ClipRepository::get_network_broadcasters_from_site_foll
     database::ScopedConnection conn(pool_);
     std::string sql =
         "SELECT c.broadcaster_id, COUNT(*) AS n "
-        "FROM subscriptions s "
-        "JOIN view_history vh ON vh.user_id = s.followed_id "
+        "FROM friendships s "
+        "JOIN view_history vh ON vh.user_id = s.friend_id "
         "JOIN clips c ON c.id = vh.clip_id AND c.broadcaster_id<>'' "
-        "WHERE s.follower_id=" + std::to_string(viewer_id) + " "
+        "WHERE s.user_id=" + std::to_string(viewer_id) + " "
         "AND vh.viewed_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY) "
         "GROUP BY c.broadcaster_id "
         "ORDER BY n DESC "
@@ -1992,10 +2181,13 @@ bool ClipRepository::refresh_feature_store_clips() {
         "c.created_at), UTC_TIMESTAMP())), "
         "c.view_count / GREATEST(0.25, TIMESTAMPDIFF(HOUR, COALESCE(STR_TO_DATE(c.twitch_created_at, "
         "'%Y-%m-%dT%H:%i:%sZ'), c.created_at), UTC_TIMESTAMP()) / 24.0), "
-        "c.like_count / GREATEST(1, c.view_count), "
+        "COALESCE(_plat_l.plat_pl,0) / GREATEST(1, COALESCE(_plat_v.plat_pv,0)), "
         "EXP(-GREATEST(0, TIMESTAMPDIFF(HOUR, COALESCE(STR_TO_DATE(c.twitch_created_at, '%Y-%m-%dT%H:%i:%sZ'), "
         "c.created_at), UTC_TIMESTAMP())) / 168.0) "
         "FROM clips c "
+        "LEFT JOIN (SELECT clip_id, COUNT(*) AS plat_pv FROM view_history GROUP BY clip_id) _plat_v ON _plat_v.clip_id=c.id "
+        "LEFT JOIN (SELECT clip_id, SUM(CASE WHEN is_like=1 THEN 1 ELSE 0 END) AS plat_pl FROM likes GROUP BY clip_id) "
+        "_plat_l ON _plat_l.clip_id=c.id "
         "ON DUPLICATE KEY UPDATE "
         "age_hours=VALUES(age_hours), velocity_score=VALUES(velocity_score), er_like=VALUES(er_like), "
         "freshness_decay=VALUES(freshness_decay), updated_at=UTC_TIMESTAMP()";
