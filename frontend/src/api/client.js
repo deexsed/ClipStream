@@ -185,7 +185,14 @@ export const auth = {
   register: (username, email, password) => api.post('/auth/register', { username, email, password }),
   login:    (email, password) => api.post('/auth/login', { email, password }),
   me:       () => api.get('/auth/me'),
-  twitchUrl: () => api.get('/auth/twitch/url'),
+  twitchUrl: async () => {
+    const data = await api.get('/auth/twitch/url');
+    const url = data?.url || data?.auth_url || data?.authorize_url || '';
+    if (!url || typeof url !== 'string') {
+      throw new Error('Сервер не вернул ссылку авторизации Twitch');
+    }
+    return { ...data, url };
+  },
   twitchLogin: (code, state, consent) => {
     const body = { code, state };
     if (consent && typeof consent === 'object') body.consent = consent;
