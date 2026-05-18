@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import useAuthStore from '../store/useAuthStore';
 
-/** Переживают remount (React Strict Mode), чтобы не дергать Twitch дважды и не терять code после replace. */
 let oauthCodeCaptured = null;
 let oauthStateCaptured = '';
 let oauthCallbackStarted = false;

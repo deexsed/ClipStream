@@ -3,10 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import { TWITCH_BROADCAST_LANGUAGES } from '../../data/twitchLanguages';
 import { useClipLangStore } from '../../store/useClipLangStore';
 
-/**
- * Горизонтальный ряд: чекбокс + код языка (RU, EN…). Тот же store, что и «Язык клипов» в шапке.
- * @param {{ syncUrl?: boolean }} props — если true, синхронизирует выбор с ?langs= в адресе.
- */
 export default function ClipLanguageInlineBar({ syncUrl = false }) {
   const [, setSearchParams] = useSearchParams();
   const codes = useClipLangStore((s) => s.codes);

@@ -1,10 +1,6 @@
 import { Link } from 'react-router-dom';
 import { LEGAL_INDEX } from '../../data/legalDocuments';
 
-/**
- * На ширине xl+ юридические ссылки вынесены в панель подписок (см. SidebarLegalLinks).
- * Здесь — только для узких экранов, где боковой колонки нет.
- */
 export default function Footer() {
   const year = new Date().getFullYear();
 

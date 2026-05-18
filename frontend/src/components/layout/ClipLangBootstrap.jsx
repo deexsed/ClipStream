@@ -3,10 +3,6 @@ import useAuthStore from '../../store/useAuthStore';
 import { useClipLangStore } from '../../store/useClipLangStore';
 import { userSettings } from '../../api/client';
 
-/**
- * После входа подтягивает clip_languages с сервера в store.
- * При изменении выбора в шапке — сохраняет настройки (debounce).
- */
 export default function ClipLangBootstrap() {
   const isAuth = useAuthStore((s) => s.isAuth);
   const codes = useClipLangStore((s) => s.codes);

@@ -23,14 +23,9 @@ import useAuthStore from '../../store/useAuthStore';
 import CommentSection from './CommentSection';
 import { formatViews, formatDurationSec, formatDateRelative } from '../../utils/clipFormatters';
 
-/**
- * Основная колонка просмотра клипа: плеер (без оверлея поверх iframe), мета, лайки, комментарии.
- * Те же API и разметка, что на /clip/:id — для ленты и страницы клипа.
- */
 export default function ClipViewerPanel({
   clipId,
   isActive = true,
-  /** onMount — как раньше на ClipPage; whenActive — просмотр только у видимого слайда ленты */
   recordViewMode = 'onMount',
   showPlayNextToggle = true,
   showBreadcrumbs = false,
@@ -39,16 +34,9 @@ export default function ClipViewerPanel({
   shareUrl,
   onFetchError,
   className = '',
-  /** В ленте плеер только у активного слайда (остальные — постер без iframe) */
   embedOnlyWhenActive = false,
-  /** Компактные отступы (лента) */
   compact = false,
-  /**
-   * stack — как на странице клипа (колонка).
-   * feedDesktop — лента: сцена с плеером, узкая колонка действий (как Shorts), панель «Описание»+комментарии.
-   */
   layoutVariant = 'stack',
-  /** Между рейкой и правой панелью (lg): стрелки вверх/вниз по ленте */
   feedNavDesktop = null,
   feedNavMobile = null,
 }) {
@@ -63,7 +51,6 @@ export default function ClipViewerPanel({
   const [copiedField, setCopiedField] = useState('');
   const [isLive, setIsLive] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState('');
-  /** null — панель свернута; открыт только один раздел, повторный клик по нему сворачивает */
   const [feedRightTab, setFeedRightTab] = useState(null);
   const [feedCommentCount, setFeedCommentCount] = useState(0);
   const [playNext, setPlayNext] = useState(() => {
@@ -408,7 +395,6 @@ export default function ClipViewerPanel({
     </div>
   );
 
-  /** В описании нет лайков (они только в рейке); просмотры/дата — в строке ниже */
   const secondaryMetaChips = (
     <div className="mt-2 flex flex-wrap gap-2 text-sm text-gray-400">
       {gameName && (

@@ -1,6 +1,3 @@
-/**
- * Единственная реализация профиля сайта: маршруты /u/:username и /channel/:login (и ?tab=…).
- */
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -66,7 +63,6 @@ const ACHIEVEMENT_TITLES = {
 
 const TAB_KEYS = ['overview', 'friendships', 'wall', 'clips', 'twitch', 'activity', 'friends_feed', 'settings'];
 
-/** Профиль страницы /channel/:login без аккаунта на сайте — тот же объект data, что у /u/:username */
 function buildGuestProfileFromChannel(cp, routeLogin) {
   const tw = cp?.twitch;
   const resolvedLogin = String(tw?.login || routeLogin || '').trim() || routeLogin;

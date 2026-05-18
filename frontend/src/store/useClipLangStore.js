@@ -4,7 +4,6 @@ import { persist } from 'zustand/middleware';
 export const useClipLangStore = create(
   persist(
     (set, get) => ({
-      /** Пустой массив — все языки (в query уходит clip_langs=). */
       codes: [],
       setCodes: (codes) => set({ codes: Array.isArray(codes) ? [...codes] : [] }),
       toggleCode: (code) =>

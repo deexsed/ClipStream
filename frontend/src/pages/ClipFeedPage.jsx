@@ -214,7 +214,6 @@ export default function ClipFeedPage() {
     return () => obs.disconnect();
   }, [clips]);
 
-  /** Плавный переход между клипами (как в YouTube Shorts) */
   const scrollToIndex = useCallback((i) => {
     const root = scrollRef.current;
     if (!root) return;
@@ -270,7 +269,6 @@ export default function ClipFeedPage() {
     return () => root.removeEventListener('wheel', onWheel);
   }, [clips.length, scrollToIndex]);
 
-  /** Стрелки — всегда (кроме ввода текста); пробел — следующий клип, не срабатывает на кнопках и ссылках */
   useEffect(() => {
     if (clips.length === 0) return;
 

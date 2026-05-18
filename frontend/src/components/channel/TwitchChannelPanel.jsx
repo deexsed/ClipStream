@@ -51,12 +51,6 @@ function twitchSinceRu(iso) {
   }
 }
 
-/**
- * @param {object} props
- * @param {string} props.channelLogin — логин канала Twitch (нижний регистр в URL)
- * @param {'page'|'embed'|'vkFeedOnly'} props.variant — page | embed в профиле | только лента клипов (оболочка снаружи)
- * @param {string} [props.embedSiteUsername] — при variant=embed ссылка «К профилю»
- */
 export default function TwitchChannelPanel({ channelLogin, variant = 'page', embedSiteUsername }) {
   const navigate = useNavigate();
   const isEmbed = variant === 'embed';

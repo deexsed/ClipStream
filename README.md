@@ -1,89 +1,39 @@
-# ClipStream — Агрегатор Игровых Хайлайтов
+# ClipStream
 
-Веб-платформа для просмотра игровых клипов (Twitch Clips) с бесконечным скроллом, фильтрацией, комментариями и системой репутации.
+Агрегатор клипов Twitch: лента, тренды, категории, профили, комментарии, друзья.
 
-## Стек технологий
+## Стек
 
-| Компонент | Технология |
-|-----------|-----------|
-| Frontend  | React 18, Tailwind CSS, Zustand, Lucide Icons |
-| Backend   | C++ 20 (Boost.Beast, nlohmann/json, jwt-cpp) |
-| БД        | MySQL 8.0 |
-| Кэш       | Redis 7 |
-| DevOps    | Docker, Docker Compose, Nginx |
+React 18, Vite, Tailwind, Zustand | C++20, Boost.Beast | MySQL 8, Redis 7 | Docker, Nginx
 
-## Архитектура
-
-```
-ClipStream/
-├── frontend/          # React SPA (Vite)
-│   └── src/
-│       ├── api/       # HTTP-клиент
-│       ├── components/# UI-компоненты (layout, clips, filters, common)
-│       ├── hooks/     # React-хуки (infinite scroll)
-│       ├── pages/     # Страницы (Home, Profile)
-│       └── store/     # Zustand stores
-├── backend/           # C++ REST API
-│   ├── include/
-│   │   ├── server/        # HTTP-сервер (Boost.Beast)
-│   │   ├── controllers/   # Обработка запросов
-│   │   ├── services/      # Бизнес-логика
-│   │   ├── repositories/  # Доступ к данным (MySQL)
-│   │   ├── models/        # Доменные модели
-│   │   ├── middleware/     # Auth, CORS
-│   │   └── database/      # Пул соединений
-│   └── src/               # Реализация
-├── database/migrations/   # SQL-миграции
-├── nginx/                 # Reverse proxy
-└── docker-compose.yml
-```
-
-## Быстрый старт
+## Запуск
 
 ```bash
-# 1. Скопировать конфиг
 cp .env.example .env
-# Отредактировать .env: указать TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, JWT_SECRET
-
-# 2. Запустить всё
 docker compose up --build -d
-
-# 3. Открыть
-# http://localhost
 ```
 
-## API Endpoints
+В `.env` задать `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `JWT_SECRET`, пароли MySQL.  
+`TWITCH_REDIRECT_URI=http://localhost/auth/callback` - тот же URL в [консоли Twitch](https://dev.twitch.tv/console/apps).
 
-| Метод  | Путь                         | Описание                    |
-|--------|------------------------------|-----------------------------|
-| POST   | `/auth/register`             | Регистрация                 |
-| POST   | `/auth/login`                | Авторизация                 |
-| GET    | `/auth/me`                   | Текущий пользователь        |
-| GET    | `/clips`                     | Лента клипов (+ фильтры)   |
-| GET    | `/clips/:id`                 | Один клип                   |
-| GET    | `/clips/search?q=`           | Поиск                       |
-| POST   | `/clips/:id/view`            | Запись просмотра            |
-| POST   | `/clips/:id/like`            | Лайк / дизлайк             |
-| GET    | `/clips/:clip_id/comments`   | Комментарии к клипу         |
-| POST   | `/clips/:clip_id/comments`   | Новый комментарий           |
-| PUT    | `/comments/:id`              | Редактирование комментария  |
-| DELETE | `/comments/:id`              | Удаление комментария        |
-| GET    | `/health`                    | Health check                |
+Открыть http://localhost .
 
-## Разработка (без Docker)
+Порты на хосте: 80 (сайт), 8080 (backend), 3000 (frontend), 3307 (MySQL), 6379 (Redis).
 
-### Backend
+Проверка:
+
 ```bash
-cd backend
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Debug
-make -j$(nproc)
-./clipstream_backend
+curl http://localhost/api/health
 ```
 
-### Frontend
+Если после перезапуска backend ответы `/api/*` дают 502:
+
 ```bash
-cd frontend
-npm install
-npm run dev
+docker compose up -d --force-recreate --no-deps nginx
 ```
+
+## Twitch OAuth
+
+1. Redirect URL в Twitch: `http://localhost/auth/callback`
+2. Вход на сайте через Twitch, callback на `/auth/callback`
+3. `LEGAL_CONSENT_VERSION` в `frontend/src/constants/legalConsent.js` и `kLegalConsentVersion` в `backend/src/controllers/AuthController.cpp` должны совпадать

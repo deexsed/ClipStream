@@ -36,7 +36,6 @@ export default function Navbar() {
     void startTwitchOAuthRedirect().catch(() => setTwitchModalOpen(true));
   };
 
-  /** Меню подписок / сворачивание гайда — нужно и гостям (иначе панель залипает в 72px без кнопки). */
   const showSubsMenu = isClipLikePage || xl;
   const handleSubsMenuClick = () => {
     if (isClipLikePage) toggleClipOverlay();

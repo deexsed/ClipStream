@@ -16,11 +16,9 @@ function formatViews(n) {
   return String(n);
 }
 
-/** Боковая колонка: похожие клипы; при пустом related — популярное в игре/общее + явные шаги «куда дальше». */
 export default function RecommendedClips({ currentClipId, onQueueChange }) {
   const [recs, setRecs] = useState([]);
   const [busy, setBusy] = useState(false);
-  /** related | fallback | none */
   const [listSource, setListSource] = useState('related');
   const [categoryGameId, setCategoryGameId] = useState(0);
   const navigate = useNavigate();

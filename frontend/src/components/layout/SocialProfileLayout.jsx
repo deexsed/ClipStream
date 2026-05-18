@@ -1,24 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Home } from 'lucide-react';
 
-/**
- * Оболочка профиля: обложка на всю ширину main, контент — на всю рабочую область (до ~1920px),
- * сетка «узкая навигация + растущая колонка контента».
- *
- * @param {object} props
- * @param {string} [props.coverUrl] — фон обложки (картинка)
- * @param {'user'|'twitch'} [props.flavor]
- * @param {string} props.avatarUrl
- * @param {import('react').ReactNode} [props.avatarBadge]
- * @param {string} props.title
- * @param {import('react').ReactNode} [props.titleBadges]
- * @param {import('react').ReactNode} [props.subtitle]
- * @param {import('react').ReactNode} [props.tagRow]
- * @param {import('react').ReactNode} [props.actionRow]
- * @param {{ id: string, label: string, icon?: import('lucide-react').LucideIcon, active: boolean, onClick: () => void }[]} props.sidebarNav
- * @param {import('react').ReactNode} [props.sidebarFooter]
- * @param {import('react').ReactNode} props.children — основная колонка (лента / разделы)
- */
 export default function SocialProfileLayout({
   coverUrl,
   flavor = 'user',
@@ -41,7 +23,6 @@ export default function SocialProfileLayout({
       }
     : undefined;
 
-  /** Одна колонка с отступами на всю рабочую область основного блока (без узкого max-w). */
   const shell =
     'w-full max-w-[min(100%,1920px)] mx-auto px-3 sm:px-5 md:px-6 lg:px-8 xl:px-10';
 

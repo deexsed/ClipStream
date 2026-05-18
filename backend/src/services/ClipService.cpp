@@ -25,8 +25,6 @@ std::string fp_key(const models::Clip& c) {
     return "id:" + std::to_string(c.id);
 }
 
-/// Настройки ленты из БД; при наличии query `clip_langs` переопределяем язык.
-/// Гость с фильтром по языку: только язык, без hide_mature из «пустого» профиля.
 const repositories::FeedMuteSet* resolve_mutes(repositories::ClipRepository& repo, uint64_t user_id,
                                                  const std::optional<std::vector<std::string>>& clip_langs_q,
                                                  repositories::FeedMuteSet& storage) {
@@ -153,7 +151,6 @@ static void merge_broadcaster_ids(std::vector<std::string>& dest, const std::vec
     }
 }
 
-/// Чередование «для вас» → «в тренде» → «новое» + слоты «открытия» (случайные / промо explore).
 static void mix_home_streams(std::vector<models::Clip>& hot, std::vector<models::Clip>& fresh,
                              std::vector<models::Clip>& rec, std::vector<models::Clip>& explore, uint32_t limit,
                              std::vector<std::pair<std::string, models::Clip>>& out) {
@@ -309,7 +306,6 @@ std::optional<nlohmann::json> ClipService::get_clip_trend_ranks(uint64_t clip_id
     auto clip = clip_repo_.find_by_id(clip_id);
     if (!clip) return std::nullopt;
 
-    /// Как запрос ленты «Тренды» при «Все языки»: clip_langs= в query → пустой список кодов.
     auto clip_langs_world = std::make_optional(std::vector<std::string>{});
     repositories::FeedMuteSet mutes_world;
     const repositories::FeedMuteSet* mp_world =
@@ -496,7 +492,6 @@ nlohmann::json ClipService::get_home_sections(uint64_t user_id, uint32_t per_sec
         recommended = diversify_feed(std::move(recommended), per_section);
     }
 
-    /// Если горячее/новое/рекомендации пусты (узкие окна по дате, мало данных в БД) — общий пул публичных клипов.
     if (hot.empty() && fresh.empty() && recommended.empty()) {
         auto pool = clip_repo_.find_public_clips_for_home_fallback(per_section * 6, mute_ptr);
         if (!pool.empty()) {
@@ -570,7 +565,6 @@ nlohmann::json ClipService::get_home_feed(uint64_t user_id, uint32_t limit,
             for (const auto& id : similar_broadcasters) j.push_back(id);
             cache_.set(similar_key, j.dump(), 60 * 60 * 24);
         }
-        /// Подписки на сайте + недавний co-view (та же аудитория, другие каналы).
         const auto site_net = clip_repo_.get_network_broadcasters_from_site_follows(user_id, 18);
         merge_broadcaster_ids(preferred_broadcasters, site_net, 16);
         merge_broadcaster_ids(similar_broadcasters, site_net, 32);
@@ -586,7 +580,6 @@ nlohmann::json ClipService::get_home_feed(uint64_t user_id, uint32_t limit,
     repositories::FeedMuteSet              mutes;
     const repositories::FeedMuteSet* mute_ptr = resolve_mutes(clip_repo_, user_id, clip_langs_q, mutes);
 
-    /// Меньший пул кандидатов: меньше сортировка по всему окну, быстрее ответ при десятках тысяч клипов.
     constexpr uint32_t kMul = 6;
     const uint32_t     pool_cap = std::max(limit * kMul, 72u);
 

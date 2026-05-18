@@ -2,7 +2,6 @@ import { useClipLangStore } from '../store/useClipLangStore';
 
 const BASE = '/api';
 
-/** @param {string[]|undefined} overrideLangs undefined — коды из шапки; [] — все языки. */
 function buildClipsFeedQuery(params, overrideLangs) {
   const sp =
     typeof params === 'string' || !params
@@ -13,7 +12,6 @@ function buildClipsFeedQuery(params, overrideLangs) {
   return sp.toString();
 }
 
-/** Добавляет clip_langs ко всем запросам лент клипов (пустая строка = все языки). */
 function withClipLangs(query) {
   return buildClipsFeedQuery(query, undefined);
 }
@@ -54,7 +52,6 @@ export const api = {
 
 export const clips = {
   feed: (params = '') => api.get(`/clips?${withClipLangs(params)}`),
-  /** Явные языки для страницы «Тренды» и т.п. Пустой массив = без фильтра по языку. */
   feedWithLangs: (params = '', langCodes = []) => api.get(`/clips?${buildClipsFeedQuery(params, langCodes)}`),
   related: (id, params = '') =>
     request(`/clips/${id}/related?${withClipLangs(params || '')}`, { cache: 'no-store' }),
@@ -63,7 +60,6 @@ export const clips = {
     if (sessionId) q.set('session_id', sessionId);
     return api.get(`/clips/home?${withClipLangs(q)}`);
   },
-  /** Смешанная лента главной (рекомендации + тренды + новинки). exclude — id через запятую (уже показанные). */
   homeFeed: (limit = 24, sessionId = '', exclude = '') => {
     const q = new URLSearchParams({ limit: String(limit) });
     if (sessionId) q.set('session_id', sessionId);
@@ -80,13 +76,9 @@ export const clips = {
   feedback: (id, action) => api.post(`/clips/${id}/feedback`, { action }),
   like:     (id, isLike) => api.post(`/clips/${id}/like`, { is_like: isLike }),
   report:   (id, reason) => api.post(`/clips/${id}/report`, { reason }),
-  /** hours, limit — query; языки из шапки. */
   discussed: (params = '') => api.get(`/clips/discussed?${withClipLangs(params || '')}`),
-  /** Только авторизованный: недосмотренное по heartbeat engagement. */
   continueWatching: (params = '') => api.get(`/clips/continue?${withClipLangs(params || '')}`),
-  /** Только авторизованный: свежие клипы каналов из недавней истории просмотров. */
   channelUpdates: (params = '') => api.get(`/clips/channel-updates?${withClipLangs(params || '')}`),
-  /** Случайный клип (учёт языков и мутов для залогиненного). */
   random: () => api.get(`/clips/random?${withClipLangs('')}`),
 };
 

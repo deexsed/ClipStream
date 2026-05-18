@@ -40,7 +40,6 @@ static std::string env(const char* name, const std::string& fallback = "") {
     return val ? std::string(val) : fallback;
 }
 
-/// Интервал полного синка клипов с Twitch (минуты). Учитывайте лимиты Helix (bucket, заголовки Ratelimit-*).
 static int clip_sync_interval_minutes() {
     const char* raw = std::getenv("CLIP_SYNC_INTERVAL_MINUTES");
     if (!raw || !*raw) return 5;
@@ -388,7 +387,6 @@ int main() {
             if (!column_exists(conn.raw(), "user_settings", "clip_languages", schema))
                 mysql_query(conn.raw(),
                     "ALTER TABLE user_settings ADD COLUMN clip_languages JSON NULL");
-            /// STORED: дата клипа Twitch для индексируемых окон ленты (без STR_TO_DATE на всей таблице).
             if (!column_exists(conn.raw(), "clips", "twitch_created_ts", schema))
                 mysql_query(conn.raw(),
                     "ALTER TABLE clips ADD COLUMN twitch_created_ts DATETIME GENERATED ALWAYS AS ("
@@ -432,7 +430,6 @@ int main() {
 
         services::SyncService sync_service(twitch_service, clip_repo, db_pool, ioc, &cache_service);
         sync_service.seed_games();
-        // Don't block server start with Twitch sync (Redis lock clipstream:sync:lock — один активный синк при scale>1)
         std::thread([&sync_service] {
             try {
                 sync_service.run_startup_sync();

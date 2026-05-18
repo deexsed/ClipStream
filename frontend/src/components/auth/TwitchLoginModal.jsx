@@ -5,10 +5,6 @@ import { Play, X } from 'lucide-react';
 import { LEGAL_CONSENT_VERSION, OAUTH_LEGAL_STORAGE_KEY } from '../../constants/legalConsent';
 import { auth as authApi } from '../../api/client';
 
-/**
- * Перед редиректом на Twitch: фиксируем согласие в sessionStorage (читается на /auth/callback).
- * Рендерится через портал в body — всегда по центру вьюпорта, независимо от вложенности в layout.
- */
 export default function TwitchLoginModal({ open, onClose, onStartedRedirect }) {
   const [pd, setPd] = useState(false);
   const [terms, setTerms] = useState(false);

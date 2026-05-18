@@ -103,7 +103,6 @@ function SubscriptionsList({ channels, isAuth, embedded }) {
   );
 }
 
-/** Свернутый режим: только аватары, вертикальный скролл (как mini-guide YouTube). */
 function SubscriptionsAvatarRail({ channels, isAuth }) {
   if (!isAuth) {
     return (
@@ -214,7 +213,6 @@ function SubscriptionsDock() {
   const setDockCollapsed = useSubsSidebarStore((s) => s.setDockCollapsed);
   const { isAuth, sorted } = useSubscriptionsData();
 
-  /** При входе как гость или после выхода — разворачиваем (из localStorage мог остаться узкий режим). Не трогаем dockCollapsed в deps — иначе гость не сможет свернуть вручную. */
   useLayoutEffect(() => {
     if (!isAuth) setDockCollapsed(false);
   }, [isAuth, setDockCollapsed]);

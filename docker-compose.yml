@@ -31,7 +31,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # При replicas/scale > 1 синхронизация Twitch координируется через Redis (clipstream:sync:lock).
   backend:
     build:
       context: ./backend

@@ -64,9 +64,7 @@ export default function ClipCard({
   highlight = '',
   shelfKey = null,
   trendRank = null,
-  /** Вторая строка оранжевого бейджа: «в тренде», «недели», «месяца»… */
   trendBadgeLine = '',
-  /** Тёмная плашка (период): «Сегодня», «Неделя»… */
   trendPill = '',
 }) {
   const dateStr = formatDate(clip.twitch_created_at || clip.created_at);

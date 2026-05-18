@@ -108,9 +108,6 @@ TwitchService::HttpResult TwitchService::https_request(const std::string& host, 
 void TwitchService::wait_for_rate_slot() {
     std::lock_guard<std::mutex> lock(request_mutex_);
     const auto now = std::chrono::steady_clock::now();
-    // Token bucket Helix: см. https://dev.twitch.tv/docs/api/guide#twitch-rate-limits
-    // (Ratelimit-Limit / Remaining / Reset; 429 + Retry-After). Для app access token часто ~800 очков/мин,
-    // дефолтный вес запроса 1 → не чаще ~13.3 запросов/с между вызовами (~75 мс).
     const auto min_gap = std::chrono::milliseconds(75);
     if (last_request_at_.time_since_epoch().count() != 0) {
         const auto elapsed = now - last_request_at_;

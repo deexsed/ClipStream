@@ -13,9 +13,6 @@ function formatDur(sec) {
   return `${m}:${String(r).padStart(2, '0')}`;
 }
 
-/**
- * Поиск в шапке: клипы; люди/каналы — одна секция (дубликат Twitch + профиль при том же логине не показываем).
- */
 export default function HeaderSearch({
   value,
   onValueChange,

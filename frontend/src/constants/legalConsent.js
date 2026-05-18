@@ -1,9 +1,8 @@
-/** Версия комплекта документов; меняйте при существенных правках и синхронизируйте с backend AuthController (kLegalConsentVersion). */
+// sync with backend kLegalConsentVersion
 export const LEGAL_CONSENT_VERSION = '2026-03-20';
 
 export const OAUTH_LEGAL_STORAGE_KEY = 'clipstream_oauth_legal_consent';
 
-/** Локально: последняя принятая пользователем версия (этот браузер). При смене LEGAL_CONSENT_VERSION снова показываем модалку. */
 export const LEGAL_CONSENT_LOCAL_ACK_KEY = 'clipstream_legal_consent_ack';
 
 export function shouldShowLegalConsentModal() {

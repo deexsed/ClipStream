@@ -1,7 +1,4 @@
-/**
- * Коды языка трансляции из Twitch Helix (поле language у клипа).
- * @type {{ code: string, label: string }[]}
- */
+/** @type {{ code: string, label: string }[]} */
 export const TWITCH_BROADCAST_LANGUAGES = [
   { code: 'en', label: 'English' },
   { code: 'ru', label: 'Русский' },

@@ -20,7 +20,6 @@ namespace {
 
 constexpr const char* kSyncLockKey = "clipstream:sync:lock";
 
-/// Redis SET NX — только один инстанс бэкенда выполняет синк (docker scale / несколько процессов).
 class SyncRedisGuard {
 public:
     explicit SyncRedisGuard(CacheService* cache) : cache_(cache) {

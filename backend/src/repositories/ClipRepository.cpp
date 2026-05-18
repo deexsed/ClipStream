@@ -47,7 +47,6 @@ void append_in_quoted(std::ostringstream& sql, const std::vector<std::string>& v
     }
 }
 
-/// Агрегаты активности на ClipStream (не Twitch): просмотры, комментарии, лайки/дизлайки.
 const char* k_clip_platform_aggr_join =
     "LEFT JOIN (SELECT clip_id, COUNT(*) AS plat_pv FROM view_history GROUP BY clip_id) _plat_v ON _plat_v.clip_id=c.id "
     "LEFT JOIN (SELECT clip_id, COUNT(*) AS plat_pc FROM comments GROUP BY clip_id) _plat_c ON _plat_c.clip_id=c.id "
@@ -93,7 +92,6 @@ void append_public_feed_filters(std::ostringstream& sql, const FeedMuteSet* mute
     }
 }
 
-/// Окна и пороги просмотров как у find_filtered при «глобальной» ленте (без game_id / канала).
 void append_trends_period_filter(std::ostringstream& sql, TimePeriod period, const char* twitch_dt) {
     switch (period) {
     case TimePeriod::Today:
@@ -775,7 +773,6 @@ std::vector<models::Clip> ClipRepository::find_recommended(uint32_t limit, const
     database::ScopedConnection conn(pool_);
     auto esc = [&](const std::string& s) { return database::escape(conn.raw(), s); };
 
-    /// Возраст клипа: сначала twitch_created_ts (индекс), иначе created_at — без STR_TO_DATE на всей таблице.
     const char* clip_age_h = "TIMESTAMPDIFF(HOUR, COALESCE(c.twitch_created_ts, c.created_at), UTC_TIMESTAMP())";
 
     std::ostringstream aff_join;
@@ -921,7 +918,6 @@ std::vector<models::Clip> ClipRepository::find_related_clips(uint64_t seed_clip_
                 << " AND vx.clip_id=c.id AND vx.viewed_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 5 DAY) LIMIT 1) ";
         }
         append_public_feed_filters(sql, mutes, esc);
-        /// Пул по релевантности; порядок для пользователя задаётся shuffle ниже (mix_seed + случайность)
         sql << "ORDER BY _rel_score DESC LIMIT " << pool_cap;
 
         if (mysql_query(conn.raw(), sql.str().c_str()) == 0) {
@@ -1786,7 +1782,6 @@ std::vector<std::string> ClipRepository::get_network_broadcasters_from_site_foll
 std::vector<std::string> ClipRepository::get_coview_broadcasters_for_taste(uint64_t user_id, uint32_t limit) {
     if (user_id == 0 || limit == 0) return {};
     database::ScopedConnection conn(pool_);
-    /// Co-view с уклоном в недавнее: те же пользователи на тех же клипах, затем их другие каналы.
     std::string sql =
         "SELECT c2.broadcaster_id "
         "FROM view_history v_me "

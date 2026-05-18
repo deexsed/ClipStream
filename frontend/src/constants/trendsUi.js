@@ -1,8 +1,5 @@
 import { useClipLangStore } from '../store/useClipLangStore';
 
-/**
- * Периоды чарта. key — значение ?trend= в query при переходе с трендов.
- */
 export const TREND_PERIODS = [
   {
     key: 'today',
@@ -44,7 +41,6 @@ export const TREND_PERIODS = [
 
 export const TREND_SECTIONS = TREND_PERIODS;
 
-/** Сколько позиций в чарте трендов */
 export const TREND_TOP_LIMIT = 50;
 
 export function getTrendPeriodMeta(key) {

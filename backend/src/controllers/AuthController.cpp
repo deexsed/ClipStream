@@ -10,8 +10,7 @@
 namespace clipstream::controllers {
 
 namespace {
-/// Синхронизировать с frontend: constants/legalConsent.js (LEGAL_CONSENT_VERSION)
-constexpr const char* kLegalConsentVersion = "2026-03-20";
+constexpr const char* kLegalConsentVersion = "2026-03-20"; // sync with frontend LEGAL_CONSENT_VERSION
 
 std::string now_plus_seconds_iso(int sec) {
     auto tp = std::chrono::system_clock::now() + std::chrono::seconds(sec);

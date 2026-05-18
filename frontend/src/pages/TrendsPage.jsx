@@ -27,7 +27,6 @@ export default function TrendsPage() {
 
   const periodMeta = TREND_PERIODS.find((p) => p.key === periodKey) || TREND_PERIODS[0];
 
-  /** При открытии с ?langs= — применить к глобальному фильтру (как в шапке). */
   useEffect(() => {
     const raw = searchParams.get('langs');
     if (raw === null) return;

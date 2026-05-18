@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import { FileText } from 'lucide-react';
 import { LEGAL_INDEX } from '../../data/legalDocuments';
 
-/** Блок ссылок внизу гайда подписок (как на YouTube). */
 export default function SidebarLegalLinks({ variant = 'expanded' }) {
   const year = new Date().getFullYear();
 

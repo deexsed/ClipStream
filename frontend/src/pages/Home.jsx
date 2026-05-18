@@ -63,7 +63,6 @@ export default function Home() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchClips, setSearchClips] = useState([]);
-  /** Смешанная лента главной: shelf = for_you | trending | fresh */
   const [feedRows, setFeedRows] = useState([]);
   const [feedLoading, setFeedLoading] = useState(false);
   const [feedHasMore, setFeedHasMore] = useState(true);
@@ -167,7 +166,6 @@ export default function Home() {
       .finally(() => setLoading(false));
   }, [sort, period, q, clipLangKey]);
 
-  /** Поиск — отдельный эффект. Не смешивать с главной: иначе при смене fetchSearchPage лента главной перезапускалась и могла затереться гонкой. */
   useEffect(() => {
     if (!q) {
       setSearchFeedError(false);
@@ -180,7 +178,6 @@ export default function Home() {
     fetchSearchPage(0, true);
   }, [q, fetchSearchPage]);
 
-  /** Каналы Twitch и профили ClipStream для страницы поиска (как в шапке, но полноэкранно). */
   useEffect(() => {
     if (!q) {
       setSearchChannels([]);
@@ -207,7 +204,6 @@ export default function Home() {
     };
   }, [q]);
 
-  /** Главная: смешанная лента `/clips/home-feed` (быстрее старой тройки запросов + без дублей при подгрузке). */
   useEffect(() => {
     if (q) return;
     const gen = ++feedFetchGenRef.current;

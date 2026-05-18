@@ -25,7 +25,6 @@ export const useSubsSidebarStore = create((set) => ({
       return { dockCollapsed: next };
     }),
 
-  /** Явно задать свёрнутость (для гостей принудительно разворачиваем панель). */
   setDockCollapsed: (collapsed) =>
     set(() => {
       try {
