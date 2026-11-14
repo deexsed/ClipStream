@@ -1,0 +1,70 @@
+.import-metrics {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.import-metrics > .surface {
+  min-width: 0;
+}
+.import-chart {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  height: 210px;
+  padding: 12px 0 28px;
+  margin: 20px 0;
+  border-bottom: 1px solid var(--theme-line, #3b3b45);
+}
+.import-chart-column {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+}
+.import-chart-bar {
+  display: block;
+  width: 100%;
+  background: var(--accent, #9147ff);
+  border-radius: 3px 3px 0 0;
+}
+.import-chart-hour {
+  position: absolute;
+  bottom: -24px;
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+  color: var(--theme-muted, #c2c2cc);
+}
+.import-table-scroll {
+  overflow-x: auto;
+}
+.import-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.import-table th,
+.import-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--theme-line, #3b3b45);
+  white-space: nowrap;
+}
+.import-table th {
+  font-weight: 600;
+}
+.import-metrics details {
+  margin-top: 18px;
+}
+.import-metrics summary {
+  cursor: pointer;
+}
+@media (max-width: 600px) {
+  .import-chart {
+    gap: 2px;
+  }
+  .import-chart-column:nth-child(even) .import-chart-hour {
+    display: none;
+  }
+}

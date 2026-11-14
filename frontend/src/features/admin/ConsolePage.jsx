@@ -29,6 +29,7 @@ import { date, number } from "../../shared/format";
 import { useSession } from "../auth/Session";
 import AdsManager from "./AdsManager";
 import ModerationManager from "./ModerationManager";
+import ImportMetrics from "./ImportMetrics";
 
 const roleNames = {
   user: "Пользователь",
@@ -124,6 +125,7 @@ export default function ConsolePage({ admin = false }) {
 function Overview({ admin }) {
   const data = useApi(admin ? "/admin/dashboard" : "/staff/bootstrap", {
     staleTime: 10000,
+    refetchInterval: 30000,
   });
   const metrics = data.data?.overview;
   return (
@@ -156,6 +158,7 @@ function Overview({ admin }) {
                 </div>
               ))}
             </div>
+            <ImportMetrics data={data.data?.clip_import} />
             <section className="surface">
               <h2>Активность за 24 часа</h2>
               <div className="metric-grid">

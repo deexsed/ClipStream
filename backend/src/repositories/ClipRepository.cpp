@@ -1530,7 +1530,12 @@ std::vector<models::Clip> ClipRepository::find_friends_feed(uint64_t viewer_user
 
 uint64_t ClipRepository::create(const models::Clip &clip) {
     database::ScopedConnection conn(pool_);
-    auto esc = [&](const std::string &s) { return database::escape(conn.raw(), s); };
+    uint64_t affected = 0;
+    return create_on_connection(conn.raw(), clip, affected);
+}
+
+uint64_t ClipRepository::create_on_connection(MYSQL *conn, const models::Clip &clip, uint64_t &affected) {
+    auto esc = [&](const std::string &s) { return database::escape(conn, s); };
 
     const std::string fp = clip.title_fingerprint.empty()
                                ? utils::compute_title_fingerprint(clip.title, clip.broadcaster_name)
@@ -1580,10 +1585,11 @@ uint64_t ClipRepository::create(const models::Clip &clip) {
         << "clip_creator_login=CASE WHEN VALUES(clip_creator_login)='' THEN clips.clip_creator_login ELSE "
            "VALUES(clip_creator_login) END";
 
-    if (database::query(conn.raw(), sql.str().c_str()))
-        throw std::runtime_error(std::string("Create clip failed: ") + mysql_error(conn.raw()));
+    if (database::query(conn, sql.str().c_str()))
+        throw std::runtime_error(std::string("Create clip failed: ") + mysql_error(conn));
 
-    return mysql_insert_id(conn.raw());
+    affected = mysql_affected_rows(conn);
+    return mysql_insert_id(conn);
 }
 
 bool ClipRepository::update(const models::Clip &clip) {

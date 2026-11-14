@@ -224,6 +224,8 @@ class ClipRepository : public IRepository<models::Clip> {
                                      const std::string &avatar_url);
 
   private:
+    friend class SyncRepository;
+    static uint64_t create_on_connection(MYSQL *conn, const models::Clip &clip, uint64_t &affected);
     models::Clip row_to_clip(MYSQL_ROW row, MYSQL_RES *res);
     std::vector<std::string> load_tags(uint64_t clip_id);
     database::ConnectionPool &pool_;

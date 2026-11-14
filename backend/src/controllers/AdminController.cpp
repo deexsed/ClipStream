@@ -11,9 +11,9 @@ server::Response unauthorized() { return {401, {{"error", "Unauthorized"}}}; }
 
 server::Response forbidden() { return {403, {{"error", "Admin access required"}}}; }
 
-bool is_admin_user(const models::User &u) { return u.role == models::UserRole::Admin; }
+bool is_admin_user(const models::User& u) { return u.role == models::UserRole::Admin; }
 
-std::optional<models::UserRole> parse_role_string(const std::string &s) {
+std::optional<models::UserRole> parse_role_string(const std::string& s) {
     if (s == "admin")
         return models::UserRole::Admin;
     if (s == "moderator")
@@ -27,21 +27,22 @@ std::optional<models::UserRole> parse_role_string(const std::string &s) {
 
 } // namespace
 
-AdminController::AdminController(services::AuthService &auth, repositories::UserRepository &users,
-                                 repositories::ClipRepository &clips)
-    : auth_(auth), users_(users), clips_(clips) {}
+AdminController::AdminController(services::AuthService& auth, repositories::UserRepository& users,
+                                 repositories::ClipRepository& clips, repositories::SyncRepository& sync,
+                                 services::TwitchService& twitch)
+    : auth_(auth), users_(users), clips_(clips), sync_(sync), twitch_(twitch) {}
 
-void AdminController::register_routes(server::Router &router) {
-    router.get("/admin/dashboard", [this](const server::Request &r) { return handle_dashboard(r); });
-    router.get("/admin/users", [this](const server::Request &r) { return handle_list_users(r); });
-    router.post("/admin/users/:id/role", [this](const server::Request &r) { return handle_set_role(r); });
-    router.get("/admin/promotions", [this](const server::Request &r) { return handle_list_promotions(r); });
-    router.post("/admin/promotions", [this](const server::Request &r) { return handle_create_promotion(r); });
+void AdminController::register_routes(server::Router& router) {
+    router.get("/admin/dashboard", [this](const server::Request& r) { return handle_dashboard(r); });
+    router.get("/admin/users", [this](const server::Request& r) { return handle_list_users(r); });
+    router.post("/admin/users/:id/role", [this](const server::Request& r) { return handle_set_role(r); });
+    router.get("/admin/promotions", [this](const server::Request& r) { return handle_list_promotions(r); });
+    router.post("/admin/promotions", [this](const server::Request& r) { return handle_create_promotion(r); });
     router.del("/admin/promotions/:id",
-               [this](const server::Request &r) { return handle_delete_promotion(r); });
+               [this](const server::Request& r) { return handle_delete_promotion(r); });
 }
 
-server::Response AdminController::handle_dashboard(const server::Request &req) {
+server::Response AdminController::handle_dashboard(const server::Request& req) {
     if (req.user_id == 0)
         return unauthorized();
     auto actor = auth_.get_user(req.user_id);
@@ -51,10 +52,16 @@ server::Response AdminController::handle_dashboard(const server::Request &req) {
     nlohmann::json body = nlohmann::json::object();
     body["overview"] = users_.get_admin_overview_stats();
     body["analytics_24h"] = clips_.get_analytics_summary_24h();
+    body["clip_import"] = sync_.dashboard();
+    try {
+        body["clip_import"]["rate"] = twitch_.rate_status();
+    } catch (const std::exception&) {
+        body["clip_import"]["rate"] = {{"available", false}};
+    }
     return {200, body};
 }
 
-server::Response AdminController::handle_list_users(const server::Request &req) {
+server::Response AdminController::handle_list_users(const server::Request& req) {
     if (req.user_id == 0)
         return unauthorized();
     auto actor = auth_.get_user(req.user_id);
@@ -92,7 +99,7 @@ server::Response AdminController::handle_list_users(const server::Request &req) 
     return {200, {{"users", list}, {"total", total}, {"limit", limit}, {"offset", offset}}};
 }
 
-server::Response AdminController::handle_set_role(const server::Request &req) {
+server::Response AdminController::handle_set_role(const server::Request& req) {
     if (req.user_id == 0)
         return unauthorized();
     auto actor = auth_.get_user(req.user_id);
@@ -145,7 +152,7 @@ server::Response AdminController::handle_set_role(const server::Request &req) {
     return {200, {{"ok", true}, {"user", u}}};
 }
 
-server::Response AdminController::handle_list_promotions(const server::Request &req) {
+server::Response AdminController::handle_list_promotions(const server::Request& req) {
     if (req.user_id == 0)
         return unauthorized();
     auto actor = auth_.get_user(req.user_id);
@@ -176,7 +183,7 @@ server::Response AdminController::handle_list_promotions(const server::Request &
     return {200, {{"promotions", rows}, {"count", rows.size()}}};
 }
 
-server::Response AdminController::handle_create_promotion(const server::Request &req) {
+server::Response AdminController::handle_create_promotion(const server::Request& req) {
     if (req.user_id == 0)
         return unauthorized();
     auto actor = auth_.get_user(req.user_id);
@@ -200,7 +207,7 @@ server::Response AdminController::handle_create_promotion(const server::Request 
     std::string placement = "all";
     if (req.body.contains("placement") && req.body["placement"].is_string())
         placement = req.body["placement"].get<std::string>();
-    const auto ok_place = [](const std::string &p) {
+    const auto ok_place = [](const std::string& p) {
         return p == "all" || p == "hot" || p == "fresh" || p == "recommended" || p == "feed" ||
                p == "explore" || p == "related";
     };
@@ -225,7 +232,7 @@ server::Response AdminController::handle_create_promotion(const server::Request 
     return {200, {{"ok", true}, {"id", *new_id}}};
 }
 
-server::Response AdminController::handle_delete_promotion(const server::Request &req) {
+server::Response AdminController::handle_delete_promotion(const server::Request& req) {
     if (req.user_id == 0)
         return unauthorized();
     auto actor = auth_.get_user(req.user_id);

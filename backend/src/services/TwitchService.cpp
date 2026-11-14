@@ -16,6 +16,8 @@
 #include <sstream>
 
 namespace clipstream::services {
+thread_local unsigned* TwitchService::background_requests_ = nullptr;
+thread_local bool TwitchService::background_history_ = false;
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace asio = boost::asio;
@@ -23,19 +25,19 @@ namespace ssl = asio::ssl;
 using tcp = asio::ip::tcp;
 using json = nlohmann::json;
 namespace {
-std::string digest(const std::string &value) {
+std::string digest(const std::string& value) {
     unsigned char bytes[SHA256_DIGEST_LENGTH];
-    SHA256(reinterpret_cast<const unsigned char *>(value.data()), value.size(), bytes);
+    SHA256(reinterpret_cast<const unsigned char*>(value.data()), value.size(), bytes);
     std::ostringstream out;
     for (auto b : bytes)
         out << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(b);
     return out.str();
 }
 struct Flight {
-    CacheService *cache{};
+    CacheService* cache{};
     std::string key;
     std::string token;
-    Flight(CacheService *c, const std::string &k)
+    Flight(CacheService* c, const std::string& k)
         : cache(c), key(k), token(std::to_string(std::random_device{}())) {
         if (cache && !cache->try_set_nx(key, token, 120))
             throw TwitchError(503, "Twitch request already in progress", 1);
@@ -48,7 +50,7 @@ struct Flight {
             }
     }
 };
-std::string encode(const std::string &value) {
+std::string encode(const std::string& value) {
     std::string out;
     constexpr char hex[] = "0123456789ABCDEF";
     for (unsigned char c : value) {
@@ -63,23 +65,23 @@ std::string encode(const std::string &value) {
     }
     return out;
 }
-json response_json(const std::string &raw, bool data = true) {
+json response_json(const std::string& raw, bool data = true) {
     auto j = json::parse(raw, nullptr, false);
     if (!j.is_object() || (data && (!j.contains("data") || !j["data"].is_array())))
         throw TwitchError(502, "Twitch returned an invalid response");
     return j;
 }
-std::string str(const json &j, const char *name) {
+std::string str(const json& j, const char* name) {
     return j.contains(name) && j[name].is_string() ? j[name].get<std::string>() : std::string{};
 }
-TwitchUser user_from(const json &u) {
+TwitchUser user_from(const json& u) {
     return {str(u, "id"), str(u, "login"), str(u, "display_name"), str(u, "email"),
             str(u, "profile_image_url")};
 }
-OAuthTokenSet token_from(const json &j) {
+OAuthTokenSet token_from(const json& j) {
     OAuthTokenSet ts{str(j, "access_token"), str(j, "refresh_token"), j.value("expires_in", 0), {}};
     if (j.contains("scope") && j["scope"].is_array())
-        for (const auto &scope : j["scope"]) {
+        for (const auto& scope : j["scope"]) {
             if (!scope.is_string())
                 continue;
             if (!ts.scope.empty())
@@ -91,22 +93,21 @@ OAuthTokenSet token_from(const json &j) {
     return ts;
 }
 } // namespace
-TwitchService::TwitchService(const std::string &client_id, const std::string &client_secret,
-                             CacheService *cache, HttpTransport transport)
+TwitchService::TwitchService(const std::string& client_id, const std::string& client_secret,
+                             CacheService* cache, HttpTransport transport)
     : client_id_(client_id), client_secret_(client_secret), cache_(cache), transport_(std::move(transport)) {}
 
 // Every stage, including DNS and TLS, shares one bounded asynchronous deadline.
-// run_for drives only this request; callers execute it in the bounded blocking executor or worker.
+// run_for drives only this request; callers execute it in the bounded blocking
+// executor or worker.
 TwitchService::HttpResult
-TwitchService::https_request(const std::string &host, const std::string &target, const std::string &body,
-                             bool is_post, const std::vector<std::pair<std::string, std::string>> &headers) {
-    if (transport_)
-        return transport_(host, target, body, is_post, headers);
+TwitchService::https_request(const std::string& host, const std::string& target, const std::string& body,
+                             bool is_post, const std::vector<std::pair<std::string, std::string>>& headers) {
     std::string bucket =
         host == "api.twitch.tv" ? "twitch:rate:" + client_id_ + ":app" : "twitch:oauth:rate:" + client_id_;
     if (host == "api.twitch.tv") {
         std::string bearer;
-        for (const auto &[name, value] : headers)
+        for (const auto& [name, value] : headers)
             if (name == "Authorization" && value.starts_with("Bearer "))
                 bearer = value.substr(7);
         {
@@ -116,6 +117,13 @@ TwitchService::https_request(const std::string &host, const std::string &target,
         }
     }
     wait_for_rate_slot(bucket);
+    if (background_requests_)
+        ++*background_requests_;
+    if (transport_) {
+        auto result = transport_(host, target, body, is_post, headers);
+        result.rate_bucket = bucket;
+        return result;
+    }
     asio::io_context io;
     ssl::context context(ssl::context::tls_client);
     context.set_default_verify_paths();
@@ -128,7 +136,7 @@ TwitchService::https_request(const std::string &host, const std::string &target,
     http::request<http::string_body> request{is_post ? http::verb::post : http::verb::get, target, 11};
     request.set(http::field::host, host);
     request.set(http::field::user_agent, "ClipStream/1.0");
-    for (const auto &[k, v] : headers)
+    for (const auto& [k, v] : headers)
         request.set(k, v);
     if (!body.empty()) {
         request.body() = body;
@@ -174,12 +182,12 @@ TwitchService::https_request(const std::string &host, const std::string &target,
     }
     if (failure)
         throw TwitchError(502, "Twitch transport or certificate verification failed");
-    auto &response = parser.get();
+    auto& response = parser.get();
     HttpResult result;
     result.rate_bucket = bucket;
     result.status = response.result_int();
     result.body = response.body();
-    auto header = [&](const char *name) {
+    auto header = [&](const char* name) {
         auto it = response.find(name);
         return it == response.end() ? std::string{} : it->value().to_string();
     };
@@ -189,7 +197,7 @@ TwitchService::https_request(const std::string &host, const std::string &target,
     result.ratelimit_limit = header("Ratelimit-Limit");
     return result;
 }
-void TwitchService::wait_for_rate_slot(const std::string &bucket) {
+void TwitchService::wait_for_rate_slot(const std::string& bucket) {
     {
         std::lock_guard lock(request_mutex_);
         const auto now = std::chrono::steady_clock::now();
@@ -210,23 +218,25 @@ void TwitchService::wait_for_rate_slot(const std::string &bucket) {
         }
     }
     if (cache_) {
-        // Header limits belong to one app/user bucket; a conservative client-wide budget also
-        // bounds aggregate traffic across replicas, refreshes and multiple OAuth sessions.
-        if (!cache_->acquire_rate_slot(bucket, 600, 60) ||
-            (!bucket.starts_with("twitch:oauth:") &&
-             !cache_->acquire_rate_slot("twitch:budget:" + client_id_, 600, 60)))
-            throw TwitchError(429, "Twitch request budget exhausted", 60);
+        // Header limits belong to one app/user bucket; a conservative client-wide
+        // budget also bounds aggregate traffic across replicas, refreshes and
+        // multiple OAuth sessions.
+        TwitchRateDeferral deferral;
+        if (!cache_->acquire_twitch_slot(bucket, client_id_, background_requests_ != nullptr,
+                                         background_history_, &deferral))
+            throw TwitchError(429, "Twitch request deferred by local budget", deferral.retry_after, 0,
+                              deferral.history_only);
     }
 }
-void TwitchService::apply_helix_ratelimit_headers(const HttpResult &res) {
+void TwitchService::apply_helix_ratelimit_headers(const HttpResult& res) {
     const auto bucket = res.rate_bucket.empty() ? "twitch:rate:" + client_id_ + ":app" : res.rate_bucket;
     if (cache_ && !res.ratelimit_remaining.empty() && !res.ratelimit_reset.empty() &&
         !res.ratelimit_limit.empty()) {
         try {
             cache_->update_rate_limit(bucket, std::max(0, std::stoi(res.ratelimit_remaining)),
                                       std::stoi(res.ratelimit_reset), std::stoi(res.ratelimit_limit));
-        } catch (const std::invalid_argument &) {
-        } catch (const std::out_of_range &) {
+        } catch (const std::invalid_argument&) {
+        } catch (const std::out_of_range&) {
         }
     }
     if (res.status != 429 && res.ratelimit_remaining != "0")
@@ -246,26 +256,30 @@ void TwitchService::apply_helix_ratelimit_headers(const HttpResult &res) {
     rate_resets_[bucket] = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
     if (rate_resets_.size() > 4096) {
         const auto now = std::chrono::steady_clock::now();
-        std::erase_if(rate_resets_, [&](const auto &item) { return item.second <= now; });
+        std::erase_if(rate_resets_, [&](const auto& item) { return item.second <= now; });
     }
 }
-void TwitchService::require_success(const HttpResult &result) {
+void TwitchService::require_success(const HttpResult& result) {
     apply_helix_ratelimit_headers(result);
     if (result.status >= 200 && result.status < 300)
         return;
     int retry = result.status == 429 ? 60 : 0;
     try {
+        if (result.status == 429 && !result.ratelimit_reset.empty())
+            retry = std::clamp(static_cast<int>(std::stoll(result.ratelimit_reset) - std::time(nullptr)) + 1,
+                               1, 3600);
         if (!result.retry_after.empty())
-            retry = std::clamp(std::stoi(result.retry_after), 1, 3600);
+            retry = std::max(retry, std::clamp(std::stoi(result.retry_after), 1, 3600));
     } catch (...) {
     }
-    // Never include upstream response bodies or OAuth values in public errors/logs.
+    // Never include upstream response bodies or OAuth values in public
+    // errors/logs.
     throw TwitchError(
         result.status == 429 ? 429 : (result.status == 401 ? 401 : (result.status == 403 ? 403 : 502)),
         result.status == 401   ? "Twitch authorization expired or revoked"
         : result.status == 429 ? "Twitch rate limited"
                                : "Twitch upstream request failed",
-        retry);
+        retry, result.status);
 }
 bool TwitchService::authenticate_locked() {
     auto response = http_post("/oauth2/token", "client_id=" + encode(client_id_) + "&client_secret=" +
@@ -286,12 +300,12 @@ bool TwitchService::ensure_app_token() {
         return true;
     return authenticate_locked();
 }
-std::string TwitchService::http_post(const std::string &url, const std::string &body) {
+std::string TwitchService::http_post(const std::string& url, const std::string& body) {
     auto result = https_request("id.twitch.tv", url, body, true, {});
     require_success(result);
     return result.body;
 }
-std::string TwitchService::http_get(const std::string &url, bool bypass_cache) {
+std::string TwitchService::http_get(const std::string& url, bool bypass_cache) {
     const auto key = "twitch:helix:v3:" + digest(client_id_ + url);
     if (cache_ && !bypass_cache)
         if (auto cached = cache_->get(key))
@@ -323,10 +337,10 @@ std::string TwitchService::http_get(const std::string &url, bool bypass_cache) {
     }
     throw TwitchError(401, "Twitch app authorization failed");
 }
-void TwitchService::set_user_token_refresh_handler(std::function<std::string(const std::string &)> handler) {
+void TwitchService::set_user_token_refresh_handler(std::function<std::string(const std::string&)> handler) {
     user_token_refresh_handler_ = std::move(handler); // Configure before starting request workers.
 }
-std::string TwitchService::http_get_with_token(const std::string &url, const std::string &original) {
+std::string TwitchService::http_get_with_token(const std::string& url, const std::string& original) {
     std::string token = original;
     for (int attempt = 0; attempt < 2; ++attempt) {
         auto result = https_request("api.twitch.tv", url, {}, false,
@@ -341,7 +355,7 @@ std::string TwitchService::http_get_with_token(const std::string &url, const std
     }
     throw TwitchError(401, "Twitch user authorization failed");
 }
-std::string TwitchService::http_post_api(const std::string &url, const std::string &body) {
+std::string TwitchService::http_post_api(const std::string& url, const std::string& body) {
     auto result = https_request("api.twitch.tv", url, body, true,
                                 {{"Client-Id", client_id_},
                                  {"Authorization", "Bearer " + app_access_token()},
@@ -349,11 +363,11 @@ std::string TwitchService::http_post_api(const std::string &url, const std::stri
     require_success(result);
     return result.body;
 }
-json TwitchService::helix_post_json(const std::string &url, const json &body) {
+json TwitchService::helix_post_json(const std::string& url, const json& body) {
     return response_json(http_post_api(url, body.dump()));
 }
-json TwitchService::helix_post_user_json(const std::string &url, const json &body,
-                                         const std::string &original) {
+json TwitchService::helix_post_user_json(const std::string& url, const json& body,
+                                         const std::string& original) {
     std::string token = original;
     for (int attempt = 0; attempt < 2; ++attempt) {
         auto result = https_request("api.twitch.tv", url, body.dump(), true,
@@ -375,7 +389,7 @@ std::string TwitchService::app_access_token() {
     std::lock_guard lock(token_mutex_);
     return access_token_;
 }
-std::optional<TokenValidation> TwitchService::validate_user_token(const std::string &token) {
+std::optional<TokenValidation> TwitchService::validate_user_token(const std::string& token) {
     auto result =
         https_request("id.twitch.tv", "/oauth2/validate", {}, false, {{"Authorization", "OAuth " + token}});
     if (result.status == 401)
@@ -389,23 +403,24 @@ std::optional<TokenValidation> TwitchService::validate_user_token(const std::str
         return std::nullopt;
     return v;
 }
-std::string TwitchService::get_auth_url(const std::string &redirect_uri) const {
+std::string TwitchService::get_auth_url(const std::string& redirect_uri) const {
     return "https://id.twitch.tv/oauth2/authorize?client_id=" + encode(client_id_) +
            "&redirect_uri=" + encode(redirect_uri) +
-           "&response_type=code&scope=user%3Aread%3Aemail%20user%3Aread%3Afollows";
+           "&response_type=code&scope=user%3Aread%3Aemail%20user%3Aread%"
+           "3Afollows";
 }
-std::optional<OAuthTokenSet> TwitchService::exchange_code_tokens(const std::string &code,
-                                                                 const std::string &uri) {
+std::optional<OAuthTokenSet> TwitchService::exchange_code_tokens(const std::string& code,
+                                                                 const std::string& uri) {
     return token_from(response_json(
         http_post("/oauth2/token", "client_id=" + encode(client_id_) +
                                        "&client_secret=" + encode(client_secret_) + "&code=" + encode(code) +
                                        "&grant_type=authorization_code&redirect_uri=" + encode(uri)),
         false));
 }
-std::string TwitchService::exchange_code(const std::string &code, const std::string &uri) {
+std::string TwitchService::exchange_code(const std::string& code, const std::string& uri) {
     return exchange_code_tokens(code, uri)->access_token;
 }
-std::optional<OAuthTokenSet> TwitchService::refresh_user_token(const std::string &refresh) {
+std::optional<OAuthTokenSet> TwitchService::refresh_user_token(const std::string& refresh) {
     if (refresh.empty())
         return std::nullopt;
     auto result = https_request("id.twitch.tv", "/oauth2/token",
@@ -420,18 +435,18 @@ std::optional<OAuthTokenSet> TwitchService::refresh_user_token(const std::string
         ts.refresh_token = refresh;
     return ts;
 }
-std::optional<TwitchUser> TwitchService::get_twitch_user(const std::string &token) {
+std::optional<TwitchUser> TwitchService::get_twitch_user(const std::string& token) {
     auto j = response_json(http_get_with_token("/helix/users", token));
     if (j["data"].empty())
         return std::nullopt;
     return user_from(j["data"][0]);
 }
 std::unordered_map<std::string, TwitchUser>
-TwitchService::fetch_users_by_ids(const std::vector<std::string> &ids) {
+TwitchService::fetch_users_by_ids(const std::vector<std::string>& ids) {
     std::unordered_map<std::string, TwitchUser> result;
     std::vector<std::string> missing;
     std::set<std::string> seen;
-    for (const auto &id : ids) {
+    for (const auto& id : ids) {
         if (id.empty() || !seen.insert(id).second)
             continue;
         if (cache_) {
@@ -453,7 +468,7 @@ TwitchService::fetch_users_by_ids(const std::vector<std::string> &ids) {
         for (std::size_t k = i; k < std::min(i + 100, missing.size()); ++k)
             url += "&id=" + encode(missing[k]);
         auto j = response_json(http_get(url));
-        for (const auto &u : j["data"]) {
+        for (const auto& u : j["data"]) {
             auto user = user_from(u);
             result[user.id] = user;
             if (cache_) {
@@ -464,12 +479,12 @@ TwitchService::fetch_users_by_ids(const std::vector<std::string> &ids) {
     }
     return result;
 }
-std::optional<TwitchUser> TwitchService::fetch_user_by_id(const std::string &id) {
+std::optional<TwitchUser> TwitchService::fetch_user_by_id(const std::string& id) {
     auto users = fetch_users_by_ids({id});
     auto it = users.find(id);
     return it == users.end() ? std::nullopt : std::optional<TwitchUser>(it->second);
 }
-std::optional<TwitchUser> TwitchService::fetch_user_by_login(const std::string &login) {
+std::optional<TwitchUser> TwitchService::fetch_user_by_login(const std::string& login) {
     if (login.empty())
         return std::nullopt;
     if (cache_)
@@ -491,8 +506,8 @@ std::optional<TwitchUser> TwitchService::fetch_user_by_login(const std::string &
     }
     return u;
 }
-std::vector<json> TwitchService::get_channels_info(const std::string &token,
-                                                   const std::vector<std::string> &ids) {
+std::vector<json> TwitchService::get_channels_info(const std::string& token,
+                                                   const std::vector<std::string>& ids) {
     std::vector<json> out;
     for (std::size_t i = 0; i < ids.size(); i += 100) {
         std::string url = "/helix/channels?";
@@ -504,7 +519,7 @@ std::vector<json> TwitchService::get_channels_info(const std::string &token,
     }
     return out;
 }
-std::vector<json> TwitchService::get_followed_channels(const std::string &token, const std::string &id, int) {
+std::vector<json> TwitchService::get_followed_channels(const std::string& token, const std::string& id, int) {
     const auto key = "twitch:followed:channels:" + digest(token + ":" + id);
     if (cache_)
         if (auto cached = cache_->get(key)) {
@@ -536,7 +551,7 @@ std::vector<json> TwitchService::get_followed_channels(const std::string &token,
         cache_->set(key, json(out).dump(), 60);
     return out;
 }
-std::vector<json> TwitchService::get_followed_streams(const std::string &token, const std::string &id, int) {
+std::vector<json> TwitchService::get_followed_streams(const std::string& token, const std::string& id, int) {
     const auto key = "twitch:followed:streams:" + digest(token + ":" + id);
     if (cache_)
         if (auto cached = cache_->get(key)) {
@@ -568,12 +583,13 @@ std::vector<json> TwitchService::get_followed_streams(const std::string &token, 
         cache_->set(key, json(out).dump(), 60);
     return out;
 }
-FetchResult TwitchService::fetch_clips(const std::string &game, int count, const std::string &cursor,
-                                       const std::string &start, const std::string &end, int min_views,
+FetchResult TwitchService::fetch_clips(const std::string& game, int count, const std::string& cursor,
+                                       const std::string& start, const std::string& end, int min_views,
                                        bool bypass) {
     count = std::clamp(count, 1, 100);
     min_views = std::max(0, min_views);
-    // Cache upstream rows, not a partially deserialized Clip. Every filter shares the same raw contract.
+    // Cache upstream rows, not a partially deserialized Clip. Every filter shares
+    // the same raw contract.
     const std::string key = "twitch:clips:v2:" + encode(game) + ":" + std::to_string(count) + ":" +
                             encode(cursor) + ":" + encode(start) + ":" + encode(end);
     json j;
@@ -597,25 +613,27 @@ FetchResult TwitchService::fetch_clips(const std::string &game, int count, const
     }
     FetchResult out;
     out.cursor = j.value("pagination", json::object()).value("cursor", "");
+    out.raw_count = static_cast<unsigned>(j["data"].size());
+    out.below_threshold = !j["data"].empty() && j["data"].back().value("view_count", 0) < min_views;
     std::vector<std::string> ids;
-    for (const auto &row : j["data"])
+    for (const auto& row : j["data"])
         if (row.value("view_count", 0) >= min_views) {
             ids.push_back(str(row, "broadcaster_id"));
             ids.push_back(str(row, "creator_id"));
         }
     auto users = fetch_users_by_ids(ids);
     std::vector<std::string> broadcasters;
-    for (const auto &row : j["data"])
+    for (const auto& row : j["data"])
         if (row.value("view_count", 0) >= min_views)
             broadcasters.push_back(str(row, "broadcaster_id"));
     std::sort(broadcasters.begin(), broadcasters.end());
     broadcasters.erase(std::unique(broadcasters.begin(), broadcasters.end()), broadcasters.end());
     std::unordered_map<std::string, bool> mature;
-    for (const auto &row : get_channels_info("", broadcasters))
+    for (const auto& row : get_channels_info("", broadcasters))
         mature[str(row, "broadcaster_id")] = !row.contains("content_classification_labels") ||
                                              !row["content_classification_labels"].is_array() ||
                                              !row["content_classification_labels"].empty();
-    for (const auto &row : j["data"]) {
+    for (const auto& row : j["data"]) {
         if (row.value("view_count", 0) < min_views)
             continue;
         models::Clip c;
@@ -643,13 +661,39 @@ FetchResult TwitchService::fetch_clips(const std::string &game, int count, const
         auto u = users.find(c.creator_twitch_id);
         if (u != users.end())
             c.creator_login = u->second.login;
-        // Channel labels describe current channel state, not historical clips. Unknown is restricted
-        // conservatively.
+        // Channel labels describe current channel state, not historical clips.
+        // Unknown is restricted conservatively.
         c.classification_source = mature.contains(c.broadcaster_id) ? "current_channel" : "unknown";
         c.is_mature = !mature.contains(c.broadcaster_id) || mature[c.broadcaster_id];
         out.clips.push_back(std::move(c));
     }
     return out;
+}
+json TwitchService::rate_status() {
+    if (!cache_)
+        return {{"available", false}};
+    return cache_->twitch_rate_status(client_id_);
+}
+GamePage TwitchService::fetch_top_games_page(int count, const std::string& cursor) {
+    auto j = response_json(http_get("/helix/games/top?first=" + std::to_string(std::clamp(count, 1, 100)) +
+                                        (cursor.empty() ? "" : "&after=" + encode(cursor)),
+                                    true));
+    GamePage page;
+    page.cursor = j.value("pagination", json::object()).value("cursor", "");
+    if (!cursor.empty() && page.cursor == cursor)
+        throw TwitchError(502, "Repeated category cursor");
+    for (const auto& row : j["data"]) {
+        GameInfo g{str(row, "id"), str(row, "name"), str(row, "box_art_url")};
+        auto p = g.box_art_url.find("{width}");
+        if (p != std::string::npos)
+            g.box_art_url.replace(p, 7, "285");
+        p = g.box_art_url.find("{height}");
+        if (p != std::string::npos)
+            g.box_art_url.replace(p, 8, "380");
+        if (!g.twitch_id.empty())
+            page.games.push_back(std::move(g));
+    }
+    return page;
 }
 std::vector<GameInfo> TwitchService::fetch_top_games(int count) {
     count = std::clamp(count, 1, 100);
@@ -662,7 +706,7 @@ std::vector<GameInfo> TwitchService::fetch_top_games(int count) {
             }
     auto j = response_json(http_get("/helix/games/top?first=" + std::to_string(count)));
     std::vector<GameInfo> out;
-    for (const auto &row : j["data"]) {
+    for (const auto& row : j["data"]) {
         GameInfo g{str(row, "id"), str(row, "name"), str(row, "box_art_url")};
         auto p = g.box_art_url.find("{width}");
         if (p != std::string::npos)
@@ -676,8 +720,8 @@ std::vector<GameInfo> TwitchService::fetch_top_games(int count) {
         cache_->set(key, json(out).dump(), 3600);
     return out;
 }
-std::vector<json> TwitchService::fetch_live_streams(const std::string &game, int count,
-                                                    const std::string &sort, const std::string &language) {
+std::vector<json> TwitchService::fetch_live_streams(const std::string& game, int count,
+                                                    const std::string& sort, const std::string& language) {
     count = std::clamp(count, 1, 50);
     const auto key = "twitch:streams:" + encode(game) + ":" + std::to_string(count) + ":" + encode(sort) +
                      ":" + encode(language);
@@ -694,7 +738,7 @@ std::vector<json> TwitchService::fetch_live_streams(const std::string &game, int
         url += "&language=" + encode(language);
     auto j = response_json(http_get(url));
     std::vector<std::string> ids;
-    for (const auto &row : j["data"])
+    for (const auto& row : j["data"])
         ids.push_back(str(row, "user_id"));
     auto users = fetch_users_by_ids(ids);
     std::vector<json> out;
@@ -717,12 +761,12 @@ std::vector<json> TwitchService::fetch_live_streams(const std::string &game, int
     }
     if (sort == "started_at")
         std::sort(out.begin(), out.end(),
-                  [](const auto &a, const auto &b) { return str(a, "started_at") > str(b, "started_at"); });
+                  [](const auto& a, const auto& b) { return str(a, "started_at") > str(b, "started_at"); });
     if (cache_)
         cache_->set(key, json(out).dump(), 60);
     return out;
 }
-std::vector<json> TwitchService::search_channels(const std::string &query, int count) {
+std::vector<json> TwitchService::search_channels(const std::string& query, int count) {
     if (query.empty())
         return {};
     const auto key =
@@ -740,33 +784,33 @@ std::vector<json> TwitchService::search_channels(const std::string &query, int c
         cache_->set(key, json(out).dump(), 60);
     return out;
 }
-std::unordered_set<std::string> TwitchService::check_live_by_logins(const std::vector<std::string> &names) {
+std::unordered_set<std::string> TwitchService::check_live_by_logins(const std::vector<std::string>& names) {
     std::unordered_set<std::string> out;
     for (std::size_t i = 0; i < names.size(); i += 100) {
         std::string url = "/helix/streams?first=100";
         for (std::size_t k = i; k < std::min(i + 100, names.size()); ++k)
             url += "&user_login=" + encode(names[k]);
         auto j = response_json(http_get(url));
-        for (const auto &row : j["data"]) {
+        for (const auto& row : j["data"]) {
             out.insert(str(row, "user_login"));
             out.insert(str(row, "user_name"));
         }
     }
     return out;
 }
-std::unordered_set<std::string> TwitchService::check_live_by_user_ids(const std::vector<std::string> &ids) {
+std::unordered_set<std::string> TwitchService::check_live_by_user_ids(const std::vector<std::string>& ids) {
     std::unordered_set<std::string> out;
     for (std::size_t i = 0; i < ids.size(); i += 100) {
         std::string url = "/helix/streams?first=100";
         for (std::size_t k = i; k < std::min(i + 100, ids.size()); ++k)
             url += "&user_id=" + encode(ids[k]);
         auto j = response_json(http_get(url));
-        for (const auto &row : j["data"])
+        for (const auto& row : j["data"])
             out.insert(str(row, "user_id"));
     }
     return out;
 }
-json TwitchService::get_public_channel_profile(const std::string &login) {
+json TwitchService::get_public_channel_profile(const std::string& login) {
     if (login.empty())
         return {{"found", false}};
     const auto key = "twitch:pub_profile:" + login;

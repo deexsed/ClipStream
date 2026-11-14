@@ -43,6 +43,13 @@ class Result {
     Result(const Result &) = delete;
     Result &operator=(const Result &) = delete;
     Result(Result &&other) noexcept : value_(std::exchange(other.value_, nullptr)) {}
+    Result &operator=(Result &&other) noexcept {
+        if (this != &other) {
+            reset();
+            value_ = std::exchange(other.value_, nullptr);
+        }
+        return *this;
+    }
     operator MYSQL_RES *() const noexcept { return value_; }
     void reset() noexcept {
         if (value_)

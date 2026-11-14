@@ -51,6 +51,7 @@ Backend собирается через `backend/Dockerfile`; CMake включа
 
 - [Архитектура и контракты](docs/architecture.md)
 - [Настройка Twitch OAuth](docs/twitch-oauth.md)
+- [Импорт клипов, пороги и бюджет Twitch API](docs/clip-import.md)
 - [Документы и некоммерческий запуск](docs/legal-operations.md)
 - [Развёртывание и масштабирование](docs/deployment.md)
 - [Результаты проверки и ограничения](docs/validation.md)

@@ -118,7 +118,7 @@ int main() {
             auth_service.start_validation();
             if (!env("TWITCH_CLIENT_ID").empty() && !env("TWITCH_CLIENT_SECRET").empty()) {
                 sync_service.seed_games();
-                sync_service.start_periodic(number("CLIP_SYNC_INTERVAL_MINUTES", 5, 120));
+                sync_service.start_periodic(number("CLIP_SYNC_INTERVAL_MINUTES", 1, 120));
                 if (!broadcasters.empty())
                     eventsub_service.start();
             }
@@ -161,7 +161,8 @@ int main() {
                                                     notif_repo);
         controllers::EventSubController eventsub_ctrl(eventsub_service);
         controllers::StaffController staff_ctrl(auth_service, cache_service, clip_repo);
-        controllers::AdminController admin_ctrl(auth_service, user_repo, clip_repo);
+        repositories::SyncRepository sync_repo(db_pool);
+        controllers::AdminController admin_ctrl(auth_service, user_repo, clip_repo, sync_repo, twitch_service);
         controllers::AdsController ads_ctrl(auth_service, ads_repo, jwt_secret);
         controllers::SocialController social_ctrl(auth_service, clip_service, twitch_service, user_repo,
                                                   notif_repo, profile_repo);

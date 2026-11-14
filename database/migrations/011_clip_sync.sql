@@ -1,0 +1,39 @@
+CREATE TABLE IF NOT EXISTS clip_sync_games (
+ game_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+ fresh_until BIGINT NOT NULL,
+ history_until BIGINT NOT NULL,
+ scheduled_at BIGINT NOT NULL DEFAULT 0,
+ FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS clip_sync_windows (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ game_id BIGINT UNSIGNED NOT NULL,
+ phase VARCHAR(16) NOT NULL,
+ start_epoch BIGINT NOT NULL,
+ end_epoch BIGINT NOT NULL,
+ `cursor` TEXT NOT NULL,
+ pages INT UNSIGNED NOT NULL DEFAULT 0,
+ raw_count INT UNSIGNED NOT NULL DEFAULT 0,
+ is_partition BOOLEAN NOT NULL DEFAULT FALSE,
+ retry_at BIGINT NOT NULL DEFAULT 0,
+ UNIQUE KEY idx_csw_window(game_id,phase,start_epoch,end_epoch),
+ INDEX idx_csw_queue(phase,retry_at,end_epoch),
+ FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS clip_sync_events (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ phase VARCHAR(16) NOT NULL,
+ status VARCHAR(24) NOT NULL,
+ game_id BIGINT UNSIGNED NULL,
+ fetched INT UNSIGNED NOT NULL DEFAULT 0,
+ inserted INT UNSIGNED NOT NULL DEFAULT 0,
+ updated INT UNSIGNED NOT NULL DEFAULT 0,
+ unchanged INT UNSIGNED NOT NULL DEFAULT 0,
+ filtered INT UNSIGNED NOT NULL DEFAULT 0,
+ requests INT UNSIGNED NOT NULL DEFAULT 0,
+ upstream_status INT NOT NULL DEFAULT 0,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ INDEX idx_cse_date(created_at),
+ INDEX idx_cse_phase(phase,created_at)
+) ENGINE=InnoDB;
+ALTER TABLE clips ADD INDEX idx_clips_import_date(created_at);
