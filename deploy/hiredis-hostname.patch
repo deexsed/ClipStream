@@ -1,0 +1,14 @@
+diff --git a/ssl.c b/ssl.c
+--- a/ssl.c
++++ b/ssl.c
+@@ -436,6 +436,10 @@ int redisInitiateSSLWithContext(redisContext *c, redisSSLContext *redis_ssl_ctx)
+     }
+ 
+     if (redis_ssl_ctx->server_name) {
++        if (!SSL_set1_host(ssl, redis_ssl_ctx->server_name)) {
++            __redisSetError(c, REDIS_ERR_OTHER, "Failed to configure hostname verification");
++            goto error;
++        }
+         if (!SSL_set_tlsext_host_name(ssl, redis_ssl_ctx->server_name)) {
+             __redisSetError(c, REDIS_ERR_OTHER, "Failed to set server_name/SNI");
+             goto error;

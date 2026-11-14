@@ -1,0 +1,149 @@
+# Supply published image digests and external HA endpoints through shell environment.
+# Run deploy/migrate-stack.yml successfully BEFORE deploying this stack.
+x-app-env: &app-env
+  LEGAL_OPERATOR_NAME: ${LEGAL_OPERATOR_NAME:-}
+  LEGAL_CONTACT_EMAIL: ${LEGAL_CONTACT_EMAIL:-}
+  LEGAL_ADDRESS: ${LEGAL_ADDRESS:-}
+  LEGAL_PRIVACY_URL: ${LEGAL_PRIVACY_URL:-}
+  LEGAL_TERMS_URL: ${LEGAL_TERMS_URL:-}
+  LEGAL_CONSENT_URL: ${LEGAL_CONSENT_URL:-}
+  LEGAL_COOKIES_URL: ${LEGAL_COOKIES_URL:-}
+  LEGAL_OFFER_URL: ${LEGAL_OFFER_URL:-}
+  LEGAL_CONSENT_VERSION: ${LEGAL_CONSENT_VERSION:-2026-11-14}
+  MYSQL_HOST: ${MYSQL_HOST:?external HA MySQL endpoint required}
+  MYSQL_PORT: ${MYSQL_PORT:-3306}
+  MYSQL_DATABASE: ${MYSQL_DATABASE:-clipstream}
+  MYSQL_USER: ${MYSQL_USER:-clipstream}
+  MYSQL_PASSWORD_FILE: /run/secrets/mysql_password
+  MYSQL_SSL_CA: /run/secrets/mysql_ca
+  MYSQL_POOL_SIZE: ${MYSQL_POOL_SIZE:-10}
+  REDIS_HOST: ${REDIS_HOST:?external HA Redis endpoint required}
+  REDIS_PORT: ${REDIS_PORT:-6380}
+  REDIS_TLS: 'true'
+  REDIS_CACERT: /run/secrets/redis_ca
+  REDIS_PASSWORD_FILE: /run/secrets/redis_password
+  ADS_MEDIA_HOSTS: ${ADS_MEDIA_HOSTS:-}
+  TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:?Twitch client ID required}
+  TWITCH_CLIENT_SECRET_FILE: /run/secrets/twitch_client_secret
+  TWITCH_REDIRECT_URI: ${TWITCH_REDIRECT_URI:?public HTTPS callback required}
+  TWITCH_EVENTSUB_USER_ID: ${TWITCH_EVENTSUB_USER_ID:-}
+  TWITCH_EVENTSUB_BROADCASTER_IDS: ${TWITCH_EVENTSUB_BROADCASTER_IDS:-}
+  CLIP_SYNC_INTERVAL_MINUTES: ${CLIP_SYNC_INTERVAL_MINUTES:-5}
+  JWT_SECRET_FILE: /run/secrets/jwt_secret
+  JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
+  HTTP_WORKERS: ${HTTP_WORKERS:-4}
+  PROXY_AUTH_SECRET_FILE: /run/secrets/proxy_auth
+  MIGRATIONS_DIR: /app/migrations
+x-app-secrets: &app-secrets
+  - {source: proxy_auth, target: proxy_auth, uid: '65532', gid: '65532', mode: 0400}
+  - {source: mysql_password, target: mysql_password, uid: '65532', gid: '65532', mode: 0400}
+  - {source: mysql_ca, target: mysql_ca, uid: '65532', gid: '65532', mode: 0400}
+  - {source: redis_password, target: redis_password, uid: '65532', gid: '65532', mode: 0400}
+  - {source: redis_ca, target: redis_ca, uid: '65532', gid: '65532', mode: 0400}
+  - {source: jwt_secret, target: jwt_secret, uid: '65532', gid: '65532', mode: 0400}
+  - {source: twitch_client_secret, target: twitch_client_secret, uid: '65532', gid: '65532', mode: 0400}
+x-app: &app
+  image: ${CLIPSTREAM_BACKEND_IMAGE:?published backend image digest required}
+  read_only: true
+  init: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  secrets: *app-secrets
+  networks: [backend]
+  stop_grace_period: 45s
+services:
+  api:
+    <<: *app
+    environment:
+      <<: *app-env
+      CLIPSTREAM_ROLE: api
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8080/health]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      replicas: 3
+      placement:
+        max_replicas_per_node: 1
+        preferences: [{spread: node.id}]
+      update_config: {parallelism: 1, order: start-first, failure_action: rollback}
+      rollback_config: {parallelism: 1, order: stop-first}
+      restart_policy: {condition: any, delay: 5s}
+      resources:
+        limits: {cpus: '2', memory: 1G}
+        reservations: {cpus: '0.25', memory: 128M}
+  worker:
+    <<: *app
+    environment:
+      <<: *app-env
+      CLIPSTREAM_ROLE: worker
+    deploy:
+      replicas: 2
+      placement: {max_replicas_per_node: 1}
+      update_config: {parallelism: 1, order: stop-first, failure_action: rollback}
+      restart_policy: {condition: any, delay: 5s}
+      resources:
+        limits: {cpus: '2', memory: 1G}
+        reservations: {cpus: '0.25', memory: 128M}
+  frontend:
+    image: ${CLIPSTREAM_FRONTEND_IMAGE:?published frontend image digest required}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    networks: [backend]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/health]
+      interval: 10s
+      timeout: 3s
+    deploy:
+      endpoint_mode: dnsrr
+      replicas: 2
+      placement: {max_replicas_per_node: 1}
+      update_config: {parallelism: 1, order: start-first, failure_action: rollback}
+      restart_policy: {condition: any, delay: 5s}
+  edge:
+    image: nginx:alpine@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72
+    user: 101:101
+    entrypoint: [sh, /app/start-edge.sh]
+    command: []
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    configs:
+      - {source: edge_config, target: /etc/nginx/nginx.conf.template}
+      - {source: edge_start, target: /app/start-edge.sh}
+    secrets:
+      - {source: proxy_auth, target: proxy_auth, uid: '101', gid: '101', mode: 0400}
+      - {source: tls_cert, target: tls_cert, uid: '101', gid: '101', mode: 0400}
+      - {source: tls_key, target: tls_key, uid: '101', gid: '101', mode: 0400}
+    ports:
+      - {target: 8080, published: 80, protocol: tcp, mode: host}
+      - {target: 8443, published: 443, protocol: tcp, mode: host}
+    networks: [backend]
+    deploy:
+      replicas: 2
+      placement: {max_replicas_per_node: 1}
+      update_config: {parallelism: 1, order: start-first, failure_action: rollback}
+      restart_policy: {condition: any, delay: 5s}
+networks:
+  backend:
+    driver: overlay
+    driver_opts: {encrypted: 'true'}
+configs:
+  edge_config:
+    name: clipstream_edge_config_${CLIPSTREAM_CONFIG_VERSION:-v1}
+    file: ../nginx/edge.prod.conf
+  edge_start:
+    name: clipstream_edge_start_${CLIPSTREAM_CONFIG_VERSION:-v1}
+    file: ../nginx/start-edge.sh
+secrets:
+  proxy_auth: {external: true, name: "${CLIPSTREAM_SECRET_PROXY_AUTH:-clipstream_proxy_auth}"}
+  mysql_password: {external: true, name: "${CLIPSTREAM_SECRET_MYSQL_PASSWORD:-clipstream_mysql_password}"}
+  mysql_ca: {external: true, name: "${CLIPSTREAM_SECRET_MYSQL_CA:-clipstream_mysql_ca}"}
+  redis_password: {external: true, name: "${CLIPSTREAM_SECRET_REDIS_PASSWORD:-clipstream_redis_password}"}
+  redis_ca: {external: true, name: "${CLIPSTREAM_SECRET_REDIS_CA:-clipstream_redis_ca}"}
+  jwt_secret: {external: true, name: "${CLIPSTREAM_SECRET_JWT_SECRET:-clipstream_jwt_secret}"}
+  twitch_client_secret: {external: true, name: "${CLIPSTREAM_SECRET_TWITCH_CLIENT_SECRET:-clipstream_twitch_client_secret}"}
+  tls_cert: {external: true, name: "${CLIPSTREAM_SECRET_TLS_CERT:-clipstream_tls_cert}"}
+  tls_key: {external: true, name: "${CLIPSTREAM_SECRET_TLS_KEY:-clipstream_tls_key}"}

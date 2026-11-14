@@ -1,84 +1,189 @@
+x-app-environment: &app-environment
+  LEGAL_OPERATOR_NAME: ${LEGAL_OPERATOR_NAME:-}
+  LEGAL_CONTACT_EMAIL: ${LEGAL_CONTACT_EMAIL:-}
+  LEGAL_ADDRESS: ${LEGAL_ADDRESS:-}
+  LEGAL_PRIVACY_URL: ${LEGAL_PRIVACY_URL:-}
+  LEGAL_TERMS_URL: ${LEGAL_TERMS_URL:-}
+  LEGAL_CONSENT_URL: ${LEGAL_CONSENT_URL:-}
+  LEGAL_COOKIES_URL: ${LEGAL_COOKIES_URL:-}
+  LEGAL_OFFER_URL: ${LEGAL_OFFER_URL:-}
+  LEGAL_CONSENT_VERSION: ${LEGAL_CONSENT_VERSION:-2026-11-14}
+  MYSQL_HOST: ${MYSQL_HOST:-db}
+  MYSQL_PORT: ${MYSQL_PORT:-3306}
+  MYSQL_DATABASE: ${MYSQL_DATABASE:-clipstream}
+  MYSQL_USER: ${MYSQL_USER:-clipstream}
+  MYSQL_PASSWORD_FILE: /run/secrets/mysql_password
+  REDIS_HOST: ${REDIS_HOST:-redis}
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  REDIS_PASSWORD_FILE: /run/secrets/redis_password
+  ADS_MEDIA_HOSTS: ${ADS_MEDIA_HOSTS:-}
+  TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
+  TWITCH_CLIENT_SECRET_FILE: /run/secrets/twitch_client_secret
+  TWITCH_REDIRECT_URI: ${TWITCH_REDIRECT_URI:-http://localhost/auth/callback}
+  TWITCH_EVENTSUB_USER_ID: ${TWITCH_EVENTSUB_USER_ID:-}
+  TWITCH_EVENTSUB_BROADCASTER_IDS: ${TWITCH_EVENTSUB_BROADCASTER_IDS:-}
+  CLIP_SYNC_INTERVAL_MINUTES: ${CLIP_SYNC_INTERVAL_MINUTES:-5}
+  JWT_SECRET_FILE: /run/secrets/jwt_secret
+  JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
+  MYSQL_POOL_SIZE: ${MYSQL_POOL_SIZE:-10}
+  HTTP_WORKERS: ${HTTP_WORKERS:-4}
+  PROXY_AUTH_SECRET_FILE: /run/secrets/proxy_auth
+  MIGRATIONS_DIR: /app/migrations
+x-app: &app
+  image: clipstream-backend:local
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  volumes: [app_secrets:/run/secrets:ro]
+  networks: [backend]
+  stop_grace_period: 45s
 services:
+  secrets-init:
+    image: nginx:alpine@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72
+    user: 0:0
+    entrypoint: [sh, /app/init-secrets.sh]
+    command: []
+    restart: 'no'
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true]
+    secrets: [mysql_password, mysql_root_password, redis_password, jwt_secret, twitch_client_secret, proxy_auth]
+    volumes:
+      - ./deploy/init-secrets.sh:/app/init-secrets.sh:ro
+      - app_secrets:/app-secrets
+      - db_secrets:/db-secrets
+      - redis_secrets:/redis-secrets
+      - edge_secrets:/edge-secrets
   db:
-    image: mysql:8.0
+    image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    ports:
-      - "3307:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./database/migrations:/docker-entrypoint-initdb.d
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-clipstream}
+      MYSQL_USER: ${MYSQL_USER:-clipstream}
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_password
+    depends_on:
+      secrets-init: {condition: service_completed_successfully}
+    volumes: [mysql_data:/var/lib/mysql, db_secrets:/run/secrets:ro]
+    networks: [backend]
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
+      test: [CMD, mysqladmin, ping, -h, localhost]
+      interval: 5s
+      timeout: 3s
+      retries: 30
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
     restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
+    user: redis
+    command:
+      - sh
+      - -ec
+      - |
+        umask 077
+        printf 'bind 0.0.0.0\nprotected-mode yes\nappendonly yes\nrequirepass %s\n' "$$(cat /run/secrets/redis_password)" > /tmp/redis.conf
+        exec redis-server /tmp/redis.conf
+    depends_on:
+      secrets-init: {condition: service_completed_successfully}
+    volumes: [redis_data:/data, redis_secrets:/run/secrets:ro]
+    networks: [backend]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    ports:
-      - "${BACKEND_PORT:-8080}:8080"
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    <<: *app
+    restart: 'no'
     environment:
-      MYSQL_HOST: ${MYSQL_HOST}
-      MYSQL_PORT: ${MYSQL_PORT}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      REDIS_HOST: ${REDIS_HOST}
-      REDIS_PORT: ${REDIS_PORT}
-      TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID}
-      TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET}
-      TWITCH_REDIRECT_URI: ${TWITCH_REDIRECT_URI:-http://localhost/auth/callback}
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
+      <<: *app-environment
+      CLIPSTREAM_ROLE: migrate
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+  api:
+    <<: *app
+    environment:
+      <<: *app-environment
+      CLIPSTREAM_ROLE: api
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8080/health]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  worker:
+    <<: *app
+    environment:
+      <<: *app-environment
+      CLIPSTREAM_ROLE: worker
+    depends_on:
+      migrate: {condition: service_completed_successfully}
   frontend:
+    image: clipstream-frontend:local
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        ASSET_BASE_URL: ${ASSET_BASE_URL:-/}
     restart: unless-stopped
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
-    depends_on:
-      - backend
-
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [backend]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/health]
+      interval: 10s
+      timeout: 3s
+      retries: 5
   nginx:
-    image: nginx:alpine
+    image: nginx:alpine@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
+    user: 101:101
+    entrypoint: [sh, /app/start-edge.sh]
+    command: []
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports: ['${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-80}:8080']
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - edge_secrets:/run/secrets:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf.template:ro
+      - ./nginx/start-edge.sh:/app/start-edge.sh:ro
     depends_on:
-      - backend
-      - frontend
-
+      api: {condition: service_healthy}
+      frontend: {condition: service_healthy}
+    networks: [backend]
 volumes:
+  app_secrets:
+  db_secrets:
+  redis_secrets:
+  edge_secrets:
   mysql_data:
   redis_data:
+networks:
+  backend:
+secrets:
+  mysql_password:
+    file: ${SECRETS_DIR:-./temp/secrets}/mysql_password
+  mysql_root_password:
+    file: ${SECRETS_DIR:-./temp/secrets}/mysql_root_password
+  redis_password:
+    file: ${SECRETS_DIR:-./temp/secrets}/redis_password
+  jwt_secret:
+    file: ${SECRETS_DIR:-./temp/secrets}/jwt_secret
+  twitch_client_secret:
+    file: ${SECRETS_DIR:-./temp/secrets}/twitch_client_secret
+
+  proxy_auth:
+    file: ${SECRETS_DIR:-./temp/secrets}/proxy_auth

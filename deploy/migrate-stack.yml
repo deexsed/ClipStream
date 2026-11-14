@@ -1,0 +1,35 @@
+# Deploy as a separate one-shot stack and verify task exits 0 before the application stack.
+# No HTTP/API replica applies schema changes.
+services:
+  migrate:
+    image: ${CLIPSTREAM_BACKEND_IMAGE:?published backend image digest required}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    environment:
+      CLIPSTREAM_ROLE: migrate
+      MYSQL_HOST: ${MYSQL_HOST:?external HA MySQL endpoint required}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-clipstream}
+      MYSQL_USER: ${MYSQL_USER:-clipstream}
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_password
+      MYSQL_SSL_CA: /run/secrets/mysql_ca
+      REDIS_HOST: ${REDIS_HOST:?external HA Redis endpoint required}
+      REDIS_PORT: ${REDIS_PORT:-6380}
+      REDIS_TLS: 'true'
+      REDIS_CACERT: /run/secrets/redis_ca
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      MIGRATIONS_DIR: /app/migrations
+    secrets:
+      - {source: mysql_password, target: mysql_password, uid: '65532', gid: '65532', mode: 0400}
+      - {source: mysql_ca, target: mysql_ca, uid: '65532', gid: '65532', mode: 0400}
+      - {source: redis_password, target: redis_password, uid: '65532', gid: '65532', mode: 0400}
+      - {source: redis_ca, target: redis_ca, uid: '65532', gid: '65532', mode: 0400}
+    deploy:
+      replicas: 1
+      restart_policy: {condition: none}
+secrets:
+  mysql_password: {external: true, name: "${CLIPSTREAM_SECRET_MYSQL_PASSWORD:-clipstream_mysql_password}"}
+  mysql_ca: {external: true, name: "${CLIPSTREAM_SECRET_MYSQL_CA:-clipstream_mysql_ca}"}
+  redis_password: {external: true, name: "${CLIPSTREAM_SECRET_REDIS_PASSWORD:-clipstream_redis_password}"}
+  redis_ca: {external: true, name: "${CLIPSTREAM_SECRET_REDIS_CA:-clipstream_redis_ca}"}

@@ -22,3 +22,10 @@ Thumbs.db
 # Docker
 mysql_data/
 redis_data/
+
+# Project build and temporary artifacts at every level
+**/build/
+**/temp/
+**/secrets/
+.env.*
+!.env.example
