@@ -1,0 +1,186 @@
+/* Shared by every route and portal. Individual scale preserves positioning
+   transforms; CSS retargets an interrupted press from its current value. */
+:root {
+  --interaction-return: 180ms;
+  --interaction-press: 70ms;
+  --interaction-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+:root
+  :is(
+    button,
+    a[href],
+    input,
+    textarea,
+    select,
+    [role="button"],
+    [role="tab"],
+    [role="switch"],
+    [role="checkbox"],
+    [role="combobox"]
+  ) {
+  touch-action: manipulation;
+  transition:
+    scale var(--interaction-return) var(--interaction-ease),
+    background-color 140ms,
+    color 140ms,
+    border-color 140ms,
+    box-shadow var(--interaction-return),
+    outline-color 140ms,
+    opacity 140ms;
+}
+:root
+  :is(
+    button,
+    a[href],
+    [role="button"],
+    [role="tab"],
+    [role="switch"],
+    [role="checkbox"]
+  ):active:not(
+    :disabled,
+    [aria-disabled="true"],
+    [aria-busy="true"],
+    :focus-visible
+  ) {
+  scale: 0.97;
+  transition-duration: var(--interaction-press);
+}
+/* A smaller response keeps large cards and navigation rows stable. */
+:root
+  :is(a[href], .notification-list > button):active:not(
+    :disabled,
+    [aria-disabled="true"],
+    [aria-busy="true"],
+    :focus-visible
+  ) {
+  scale: 0.985;
+}
+:root a[href]:active:not([aria-disabled="true"], [aria-busy="true"]) {
+  opacity: 0.8;
+}
+:root
+  :is(
+    button,
+    a[href],
+    input,
+    textarea,
+    select,
+    [role="button"],
+    [role="tab"],
+    [role="switch"],
+    [role="checkbox"],
+    [role="combobox"]
+  ):focus-visible {
+  outline: 2px solid #bba6ef;
+  outline-offset: 3px;
+}
+:root :is(button, input, textarea, select):disabled,
+:root [aria-disabled="true"] {
+  cursor: not-allowed;
+}
+:root [aria-busy="true"] {
+  cursor: progress;
+}
+.button[aria-busy="true"] {
+  opacity: 0.78;
+}
+:root button[aria-pressed="true"] {
+  background-color: #30283d;
+  color: #e5d9ff;
+}
+:root nav a.active {
+  background-color: #2a2637;
+  color: #ddd5ff;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  /* An overlay preserves each control's selected, primary or danger color. */
+  :root
+    :is(
+      button,
+      [role="button"],
+      [role="tab"],
+      [role="switch"],
+      [role="checkbox"]
+    ):hover:not(:disabled, [aria-disabled="true"], [aria-busy="true"]) {
+    background-image: linear-gradient(#ffffff09, #ffffff09);
+  }
+  .button:hover:not(:disabled, [aria-disabled="true"]) {
+    border-color: #61566f;
+    box-shadow: 0 3px 12px #0002;
+  }
+  .button-primary:hover:not(:disabled) {
+    background-color: #e3d7ff;
+    border-color: #e3d7ff;
+    box-shadow: 0 3px 18px #bea0ff25;
+  }
+  .icon-button:hover:not(:disabled) {
+    background-color: #302a3a;
+  }
+  :root
+    a[href]:hover:not([aria-disabled="true"]):where(
+      :not(
+        .button,
+        .icon-button,
+        .thumbnail,
+        .category-card,
+        .ad-content,
+        .wordmark,
+        .profile-link
+      )
+    ) {
+    color: #dfd6ff;
+  }
+  :root
+    :is(
+      .side-navigation > a,
+      .side-group > a,
+      .bottom-navigation > a,
+      .category-strip > a,
+      .creator,
+      .people-row > a
+    ):hover {
+    background-image: linear-gradient(#c8beff0d, #c8beff0d);
+  }
+  .category-card > div,
+  .thumbnail {
+    transition: box-shadow 180ms;
+  }
+  :is(.category-card:hover > div, .thumbnail:hover) {
+    box-shadow:
+      0 0 0 2px #bba6ef70,
+      0 5px 18px #0003;
+  }
+  :root
+    :is(input, textarea, select):hover:not(
+      :disabled,
+      [readonly],
+      [type="checkbox"],
+      [type="radio"]
+    ) {
+    border-color: #71647f;
+  }
+  :root :is(input[type="checkbox"], input[type="radio"]):hover:not(:disabled) {
+    box-shadow: 0 0 0 4px #bba6ef20;
+  }
+}
+
+/* Color/outline feedback remains; spatial motion is optional. */
+@media (prefers-reduced-motion: reduce) {
+  :root
+    :is(
+      button,
+      a[href],
+      input,
+      textarea,
+      select,
+      [role="button"],
+      [role="tab"],
+      [role="switch"],
+      [role="checkbox"],
+      [role="combobox"]
+    ) {
+    scale: none !important;
+    transition: none !important;
+  }
+}

@@ -7,6 +7,7 @@ import { queryClient } from "./shared/api/queries";
 import { SessionProvider } from "./features/auth/Session";
 import { ErrorBoundary } from "./shared/ui/Primitives";
 import "./styles/index.css";
+import "./styles/interactions.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
