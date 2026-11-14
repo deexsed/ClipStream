@@ -1,3 +1,4 @@
+import Select from "../../shared/ui/Select";
 import { useEffect, useRef, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
@@ -44,13 +45,14 @@ export default function ClipRushPage() {
         </h1>
         <label>
           <span className="sr-only">Порядок ClipRush</span>
-          <select
+          <Select
+            aria-label="Порядок ClipRush"
             value={sort}
             onChange={(event) => setSort(event.target.value)}
           >
             <option value="popular">Популярные</option>
             <option value="recent">Сначала новые</option>
-          </select>
+          </Select>
         </label>
       </header>
       <RushFeed
@@ -289,7 +291,6 @@ function RushFeed({ languageKey, sort }) {
           >
             <ArrowUp />
           </IconButton>
-          <span>{index + 1}</span>
           <IconButton
             label="Следующий клип"
             disabled={

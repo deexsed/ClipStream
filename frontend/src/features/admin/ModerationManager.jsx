@@ -1,3 +1,4 @@
+import Select from "../../shared/ui/Select";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
@@ -129,13 +130,13 @@ function Accounts() {
         </label>
         <label>
           Действие
-          <select name="action">
+          <Select aria-label="Действие с аккаунтом" name="action">
             <option value="suspend_account">Отстранить на срок</option>
             <option value="block_account">Заблокировать навсегда</option>
             <option value="unblock_account">Снять блокировку аккаунта</option>
             <option value="chat_ban">Ограничить обсуждения</option>
             <option value="lift_chat">Снять ограничение обсуждений</option>
-          </select>
+          </Select>
         </label>
         <label>
           Срок, часов
@@ -452,7 +453,7 @@ function ContentActionForm({ clipId, reportId }) {
       )}
       <label>
         Действие
-        <select name="action">
+        <Select aria-label="Действие с клипом" name="action">
           <option value="hide">Скрыть клип</option>
           <option value="restore">Вернуть клип</option>
           <option value="mature">Классифицировать: с ограничением</option>
@@ -465,7 +466,7 @@ function ContentActionForm({ clipId, reportId }) {
               <option value="actioned">Завершить обработку жалобы</option>
             </>
           )}
-        </select>
+        </Select>
       </label>
       <label>
         Обоснование

@@ -23,6 +23,26 @@ class ResizeObserver {
   disconnect() {}
 }
 vi.stubGlobal("ResizeObserver", ResizeObserver);
+for (const method of [
+  "scrollIntoView",
+  "setPointerCapture",
+  "releasePointerCapture",
+]) {
+  if (!Element.prototype[method])
+    Object.defineProperty(Element.prototype, method, {
+      configurable: true,
+      writable: true,
+      value() {},
+    });
+}
+if (!Element.prototype.hasPointerCapture)
+  Object.defineProperty(Element.prototype, "hasPointerCapture", {
+    configurable: true,
+    writable: true,
+    value() {
+      return false;
+    },
+  });
 afterEach(() => {
   cleanup();
   queryClient.clear();

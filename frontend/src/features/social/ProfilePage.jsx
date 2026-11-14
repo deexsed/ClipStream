@@ -1,3 +1,4 @@
+import Select from "../../shared/ui/Select";
 import { useEffect, useState } from "react";
 import {
   Link,
@@ -344,14 +345,15 @@ function UnifiedClips({ profile }) {
         <h2>Клипы</h2>
         <label className="select-label">
           <span className="sr-only">Какие клипы показывать</span>
-          <select
+          <Select
+            aria-label="Какие клипы показывать"
             value={scope}
             onChange={(event) => setScope(event.target.value)}
           >
             <option value="all">Все связанные клипы</option>
             {profile.twitch && <option value="channel">С этого канала</option>}
             <option value="created">Созданные автором</option>
-          </select>
+          </Select>
         </label>
       </div>
       <Status
@@ -435,20 +437,24 @@ function ProfileSettingsForm({ initial }) {
       ].map(([key, label]) => (
         <label key={key}>
           {label}
-          <select name={key} defaultValue={initial[key]}>
+          <Select aria-label={label} name={key} defaultValue={initial[key]}>
             <option value="public">Всем</option>
             <option value="friends">Друзьям</option>
             <option value="private">Только мне</option>
-          </select>
+          </Select>
         </label>
       ))}
       <label>
         Кто может оставлять записи
-        <select name="wall_policy" defaultValue={initial.wall_policy}>
+        <Select
+          aria-label="Кто может оставлять записи"
+          name="wall_policy"
+          defaultValue={initial.wall_policy}
+        >
           <option value="everyone">Все пользователи</option>
           <option value="friends">Друзья</option>
           <option value="none">Только я</option>
-        </select>
+        </Select>
       </label>
       {save.error && <Status error={save.error} />}
       {save.isSuccess && (

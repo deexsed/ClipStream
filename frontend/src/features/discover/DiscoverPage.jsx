@@ -1,3 +1,4 @@
+import Select from "../../shared/ui/Select";
 import { useRef } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useInfiniteQuery } from "@tanstack/react-query";
@@ -203,7 +204,8 @@ export default function DiscoverPage({ mode }) {
             <label className="select-label">
               <SlidersHorizontal size={15} />
               <span className="sr-only">Сортировка</span>
-              <select
+              <Select
+                aria-label="Сортировка"
                 value={recommended ? "recommended" : sort}
                 onChange={(event) => {
                   if (recommended) {
@@ -224,7 +226,7 @@ export default function DiscoverPage({ mode }) {
                 <option value="popular">Популярные</option>
                 <option value="recent">Сначала новые</option>
                 <option value="duration">По длительности</option>
-              </select>
+              </Select>
             </label>
           </div>
           {params.get("tag") && (

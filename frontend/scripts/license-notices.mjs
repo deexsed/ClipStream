@@ -24,9 +24,18 @@ export default function licenseNotices() {
         const files = readdirSync(directory).filter((name) =>
           /^(license|licence|copying|ofl)(?:[.-].*)?$/i.test(name),
         );
-        if (!files.length)
-          throw Error("Missing distributed license notice: " + pkg.name);
         notices.push("=".repeat(72), `${pkg.name} ${pkg.version}`, "");
+        if (!files.length) {
+          if (pkg.name === "react-remove-scroll-bar" && pkg.version === "2.3.8")
+            notices.push(
+              readFileSync(
+                resolve(root, "licenses/react-remove-scroll-bar-2.3.8.LICENSE"),
+                "utf8",
+              ),
+              "",
+            );
+          else throw Error("Missing distributed license notice: " + pkg.name);
+        }
         for (const file of files)
           notices.push(readFileSync(resolve(directory, file), "utf8"), "");
       }

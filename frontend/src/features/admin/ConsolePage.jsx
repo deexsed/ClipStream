@@ -1,3 +1,4 @@
+import Select from "../../shared/ui/Select";
 import { useState } from "react";
 import { Link, useOutletContext, useSearchParams } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
@@ -355,7 +356,7 @@ function UserRole({ user }) {
       </td>
       <td>{user.email}</td>
       <td>
-        <select
+        <Select
           aria-label={`Роль ${user.username}`}
           value={role}
           onChange={(event) => setRole(event.target.value)}
@@ -365,7 +366,7 @@ function UserRole({ user }) {
               {label}
             </option>
           ))}
-        </select>
+        </Select>
       </td>
       <td>
         <Button disabled={role === user.role} onClick={() => setConfirm(true)}>
@@ -454,7 +455,7 @@ function Promotions() {
         </label>
         <label>
           Размещение
-          <select name="placement">
+          <Select aria-label="Размещение" name="placement">
             {[
               ["recommended", "Рекомендации"],
               ["all", "Везде"],
@@ -468,7 +469,7 @@ function Promotions() {
                 {title}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         <label>
           Метка

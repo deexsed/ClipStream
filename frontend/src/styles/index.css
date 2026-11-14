@@ -1114,99 +1114,6 @@ select {
   color: var(--muted);
   font-size: 0.85rem;
 }
-.comment-form {
-  margin: 20px 0 28px;
-}
-.comment-form textarea {
-  width: 100%;
-  min-height: 90px;
-  background: #19191e;
-}
-.comment-submit {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 14px;
-  margin-top: 9px;
-}
-.comment-submit > span {
-  font-size: 0.73rem;
-}
-.comment-list {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-.comment {
-  display: flex;
-  align-items: flex-start;
-  gap: 11px;
-  min-width: 0;
-}
-.comment-content {
-  flex: 1;
-  min-width: 0;
-}
-.comment-author {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 9px;
-  font-size: 0.78rem;
-}
-.comment-author > a {
-  font-weight: 600;
-}
-.comment-author time {
-  font-size: 0.68rem;
-  color: #9695a3;
-}
-.comment-body {
-  font-size: 0.86rem;
-  line-height: 1.65;
-  white-space: pre-wrap;
-  margin: 6px 0;
-  overflow-wrap: anywhere;
-}
-.comment-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.comment-actions > button {
-  min-height: 30px;
-  padding: 4px 3px;
-  color: #aaa9b8;
-  font-size: 0.7rem;
-  display: flex;
-  gap: 5px;
-  align-items: center;
-}
-.comment-actions > button[aria-pressed="true"] {
-  color: var(--accent);
-}
-.comment-reply {
-  margin-top: 18px;
-  padding-left: 10px;
-  border-left: 1px solid #36333f;
-}
-.comment-reply .avatar {
-  width: 24px;
-  height: 24px;
-}
-.reply-label {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--accent);
-  font-size: 0.8rem;
-  padding: 8px 0;
-}
-.reply-label button {
-  color: #c6bddc;
-  text-decoration: underline;
-}
 .confirmation {
   padding: 14px;
   display: flex;
@@ -1215,9 +1122,6 @@ select {
   border: 1px solid #6a464f;
   border-radius: 8px;
   margin: 10px 0;
-}
-.empty-comment {
-  padding: 22px 0;
 }
 .profile-header {
   display: flex;
@@ -1804,12 +1708,6 @@ td .button {
   .related .clip-title {
     font-size: 0.78rem;
   }
-  .comment-submit > span {
-    display: none;
-  }
-  .comment-submit {
-    justify-content: flex-end;
-  }
   .signin-note {
     flex-direction: column;
     align-items: flex-start;
@@ -2230,7 +2128,9 @@ h3 {
   grid-column: 2;
   grid-row: 1;
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   overscroll-behavior: contain;
   padding: 20px 16px;
   background: #17171d;
@@ -2256,11 +2156,8 @@ h3 {
   padding-top: 0;
   border-top: 0;
 }
-.rush-comments .comments > .section-label > h2 {
+.rush-comments .comments-toolbar > h2 {
   display: none;
-}
-.rush-comments .comment {
-  padding: 14px 0;
 }
 .rush-comments-sheet {
   position: fixed;
@@ -2279,6 +2176,8 @@ h3 {
 }
 .rush-comments-sheet[open] {
   animation: none;
+  display: flex;
+  flex-direction: column;
 }
 .rush-sheet-grip {
   position: absolute;
@@ -2304,7 +2203,7 @@ h3 {
   border-top: 0;
   padding-top: 0;
 }
-.rush-comments-sheet .comments > .section-label > h2 {
+.rush-comments-sheet .comments-toolbar > h2 {
   display: none;
 }
 .rush-heading {
@@ -2467,11 +2366,6 @@ h3 {
   background: #24232d;
   border: 1px solid #3a3945;
 }
-.rush-navigation > span {
-  font-variant-numeric: tabular-nums;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
 .rush-end {
   min-height: 130px;
   padding: 28px 24px;
@@ -2513,9 +2407,6 @@ h3 {
     width: 38px;
     height: 38px;
     min-height: 38px;
-  }
-  .rush-navigation > span {
-    display: none;
   }
   .rush-actions .button {
     padding-inline: 10px;

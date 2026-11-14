@@ -1,3 +1,4 @@
+import Select from "../../shared/ui/Select";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Plus, Pencil, Trash2 } from "lucide-react";
@@ -228,7 +229,8 @@ function CampaignForm({ initial, onSaved }) {
       </label>
       <label>
         Формат
-        <select
+        <Select
+          aria-label="Формат рекламы"
           name="type"
           value={type}
           onChange={(event) => setType(event.target.value)}
@@ -238,7 +240,7 @@ function CampaignForm({ initial, onSaved }) {
               {label}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       <label>
         Заголовок

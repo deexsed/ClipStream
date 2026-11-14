@@ -1,17 +1,44 @@
-import { useState } from "react";
+import Select from "../../shared/ui/Select";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
-import { MessageCircle, ThumbsDown, ThumbsUp } from "lucide-react";
+import {
+  ArrowUp,
+  CornerDownRight,
+  MessageCircle,
+  ShieldCheck,
+  ThumbsDown,
+  ThumbsUp,
+  X,
+} from "lucide-react";
 import { request } from "../../shared/api/http";
 import { usePages, pageItems, queryClient } from "../../shared/api/queries";
-import { Avatar, Button, LoadMore, Status } from "../../shared/ui/Primitives";
-import { date } from "../../shared/format";
+import {
+  Avatar,
+  Button,
+  IconButton,
+  LoadMore,
+  Status,
+} from "../../shared/ui/Primitives";
+import { date, relativeTime } from "../../shared/format";
 import { useSession } from "../auth/Session";
+import "./Comments.css";
 
 export default function Comments({ clipId }) {
   const [sort, setSort] = useState("recent");
   const [reply, setReply] = useState(null);
   const [text, setText] = useState("");
+  const [focused, setFocused] = useState(false);
+  const [sent, setSent] = useState(false);
+  const input = useRef(null);
+  const inputId = useId();
+  const composing = focused || Boolean(text) || Boolean(reply);
+  useLayoutEffect(() => {
+    if (input.current) {
+      input.current.style.height = "auto";
+      input.current.style.height = `${Math.min(160, Math.max(48, input.current.scrollHeight))}px`;
+    }
+  }, [text, composing]);
   const session = useSession();
   const { openLogin } = useOutletContext();
   const query = usePages(
@@ -34,101 +61,152 @@ export default function Comments({ clipId }) {
     onSuccess: () => {
       setText("");
       setReply(null);
+      setFocused(false);
+      setSent(true);
+      input.current?.blur();
       refresh();
     },
   });
   return (
     <section className="comments">
-      <div className="section-label">
+      <div className="comments-toolbar">
         <h2>
           <MessageCircle size={18} /> Обсуждение
         </h2>
-        <label>
-          <span className="sr-only">Порядок комментариев</span>
-          <select
-            value={sort}
-            onChange={(event) => setSort(event.target.value)}
-          >
-            <option value="recent">Сначала новые</option>
-            <option value="best">Лучшие</option>
-          </select>
-        </label>
+        <Select
+          aria-label="Порядок комментариев"
+          value={sort}
+          onChange={(event) => setSort(event.target.value)}
+        >
+          <option value="recent">Сначала новые</option>
+          <option value="best">Лучшие</option>
+        </Select>
       </div>
       {session.user ? (
         <form
-          className="comment-form"
+          className={`comment-composer ${composing ? "is-active" : ""}`}
           onSubmit={(event) => {
             event.preventDefault();
-            if (text.trim()) submit.mutate();
+            if (text.trim() && !submit.isPending) submit.mutate();
           }}
         >
-          {reply && (
-            <div className="reply-label">
-              Ответ пользователю {reply.author_name}
-              <button type="button" onClick={() => setReply(null)}>
-                Отменить
-              </button>
-            </div>
-          )}
-          <label>
-            <span className="sr-only">Ваш комментарий</span>
+          <Avatar user={session.user} />
+          <div className="composer-main">
+            {reply && (
+              <div className="composer-reply">
+                <CornerDownRight size={14} />
+                <span>
+                  Ответ <strong>@{reply.author_name}</strong>
+                </span>
+                <IconButton
+                  type="button"
+                  label="Отменить ответ"
+                  onClick={() => setReply(null)}
+                >
+                  <X size={14} />
+                </IconButton>
+              </div>
+            )}
+            <label className="sr-only" htmlFor={inputId}>
+              Ваш комментарий
+            </label>
             <textarea
+              id={inputId}
+              ref={input}
+              rows={1}
               value={text}
-              onChange={(event) => setText(event.target.value)}
+              onChange={(event) => {
+                setText(event.target.value);
+                setSent(false);
+              }}
+              onFocus={() => setFocused(true)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                  event.preventDefault();
+                  if (text.trim() && !submit.isPending) submit.mutate();
+                }
+              }}
               required
               minLength={1}
               maxLength={4000}
-              placeholder={
-                reply ? "Ваш ответ…" : "Что думаете об этом моменте?"
-              }
+              placeholder={reply ? "Написать ответ…" : "Добавить комментарий…"}
             />
-          </label>
-          <div className="comment-submit">
-            <span className="muted">Обсуждайте момент, уважайте людей.</span>
-            <Button
-              variant="primary"
-              busy={submit.isPending}
-              disabled={!text.trim()}
-            >
-              Отправить
-            </Button>
+            {composing && (
+              <div className="composer-controls">
+                <span className="composer-count">
+                  {text.length > 3500 ? `${text.length}/4000` : ""}
+                </span>
+                <Button
+                  type="button"
+                  className="composer-cancel"
+                  onClick={() => {
+                    setText("");
+                    setReply(null);
+                    setFocused(false);
+                    input.current?.blur();
+                  }}
+                >
+                  Отмена
+                </Button>
+                <Button
+                  variant="primary"
+                  busy={submit.isPending}
+                  disabled={!text.trim()}
+                >
+                  <ArrowUp size={16} /> Отправить
+                </Button>
+              </div>
+            )}
+            {submit.error && <Status error={submit.error} />}
           </div>
-          {submit.error && <Status error={submit.error} />}
         </form>
       ) : (
-        <div className="signin-note">
-          <p>Присоединяйтесь к обсуждению</p>
-          <Button onClick={openLogin}>Войти, чтобы ответить</Button>
+        <div className="comment-signin">
+          <MessageCircle size={19} />
+          <p>Поделитесь своим мнением</p>
+          <Button onClick={openLogin}>Войти через Twitch</Button>
         </div>
       )}
-      <Status
-        error={!query.data && query.error}
-        loading={query.isPending}
-        onRetry={query.refetch}
-      >
-        {rows.length === 0 && (
-          <p className="muted empty-comment">
-            Пока тихо. Начните разговор первым.
-          </p>
-        )}
-        <div className="comment-list">
-          {rows.map((row) => (
-            <Comment
-              key={row.id}
-              comment={row}
-              clipId={clipId}
-              onReply={(value) => {
-                if (session.user) {
-                  setReply(value);
-                  document.querySelector(".comment-form textarea")?.focus();
-                } else openLogin();
-              }}
-              refresh={refresh}
-            />
-          ))}
-        </div>
-        <LoadMore query={query} />
-      </Status>
+      {sent && (
+        <span className="sr-only" role="status">
+          Комментарий отправлен
+        </span>
+      )}
+      <div className="comment-stream">
+        <Status
+          error={!query.data && query.error}
+          loading={query.isPending}
+          onRetry={query.refetch}
+        >
+          {rows.length === 0 && (
+            <div className="comments-empty">
+              <span className="comments-empty-icon">
+                <MessageCircle size={23} strokeWidth={1.5} />
+              </span>
+              <strong>Пока без комментариев</strong>
+              <p>Начните обсуждение этого момента.</p>
+            </div>
+          )}
+          <div className="comment-list">
+            {rows.map((row) => (
+              <Comment
+                key={row.id}
+                comment={row}
+                clipId={clipId}
+                onReply={(value) => {
+                  if (session.user) {
+                    setReply(value);
+                    setFocused(true);
+                    input.current?.focus();
+                  } else openLogin();
+                }}
+                refresh={refresh}
+              />
+            ))}
+          </div>
+          <LoadMore query={query} />
+        </Status>
+      </div>
     </section>
   );
 }
@@ -162,23 +240,45 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
     else change.mutate({ method: "POST", suffix: "/vote", body: { value } });
   };
   return (
-    <article className={`comment ${depth ? "comment-reply" : ""}`}>
-      <Avatar
-        user={{
-          username: comment.author_name,
-          avatar_url: comment.author_avatar,
-        }}
-      />
+    <article
+      className={`comment ${depth ? "comment-reply" : ""} ${depth >= 2 ? "comment-flat" : ""}`}
+    >
+      {depth < 2 && (
+        <Avatar
+          user={{
+            username: comment.author_name,
+            avatar_url: comment.author_avatar,
+          }}
+        />
+      )}
       <div className="comment-content">
         <div className="comment-author">
           <Link to={`/u/${encodeURIComponent(comment.author_name)}`}>
             {comment.author_name}
           </Link>
-          <time>{date(comment.created_at)}</time>
+          {comment.is_clip_channel_owner && (
+            <span className="comment-badge">Автор канала</span>
+          )}
+          {["admin", "moderator"].includes(comment.author_role) && (
+            <span
+              className="comment-staff"
+              title={
+                comment.author_role === "admin" ? "Администратор" : "Модератор"
+              }
+            >
+              <ShieldCheck size={13} />
+            </span>
+          )}
+          <time title={date(comment.created_at, true)}>
+            {relativeTime(comment.created_at)}
+          </time>
+          {comment.updated_at && comment.updated_at !== comment.created_at && (
+            <span className="comment-edited">изменено</span>
+          )}
         </div>
         {editing ? (
           <form
-            className="form-stack"
+            className="form-stack comment-editor"
             onSubmit={(event) => {
               event.preventDefault();
               change.mutate({ method: "PUT", body: { body: text.trim() } });
@@ -190,6 +290,7 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
               onChange={(event) => setText(event.target.value)}
               maxLength={4000}
               required
+              autoFocus
             />
             <div className="button-row">
               <Button busy={change.isPending}>Сохранить</Button>
@@ -208,8 +309,8 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
             disabled={change.isPending}
             onClick={() => vote(comment.user_vote === 1 ? 0 : 1)}
           >
-            <ThumbsUp size={13} />
-            {comment.upvotes || 0}
+            <ThumbsUp size={15} />
+            {comment.upvotes > 0 && comment.upvotes}
           </button>
           <button
             aria-label="Неполезный комментарий"
@@ -217,8 +318,8 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
             disabled={change.isPending}
             onClick={() => vote(comment.user_vote === -1 ? 0 : -1)}
           >
-            <ThumbsDown size={13} />
-            {comment.downvotes || 0}
+            <ThumbsDown size={15} />
+            {comment.downvotes > 0 && comment.downvotes}
           </button>
           {depth < 7 && (
             <button onClick={() => onReply(comment)}>Ответить</button>
@@ -260,7 +361,7 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
             clipId={clipId}
             refresh={refresh}
             onReply={onReply}
-            depth={Math.min(depth + 1, 3)}
+            depth={depth + 1}
           />
         ))}
         {comment.replies_truncated && !expanded && (

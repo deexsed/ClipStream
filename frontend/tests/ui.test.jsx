@@ -186,9 +186,10 @@ describe("session and accessible UI", () => {
     expect(
       screen.getByRole("link", { name: /Открыть Twitch/ }).getAttribute("href"),
     ).toBe("https://www.twitch.tv/streamer");
-    fireEvent.change(screen.getByRole("combobox"), {
-      target: { value: "channel" },
-    });
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "ArrowDown" });
+    fireEvent.click(
+      await screen.findByRole("option", { name: "С этого канала" }),
+    );
     await waitFor(() =>
       expect(
         globalThis.fetch.mock.calls.some(
