@@ -77,7 +77,20 @@ export function SessionProvider({ children }) {
 }
 export const useSession = () => useContext(SessionContext);
 
+export function oauthUnavailableReason() {
+  if (globalThis.isSecureContext === false)
+    return "Для входа через Twitch откройте сайт по HTTPS. На компьютере с сервером можно использовать http://localhost. Вход по HTTP-адресу локальной сети недоступен.";
+  if (
+    typeof globalThis.crypto?.subtle?.digest !== "function" ||
+    typeof globalThis.crypto?.getRandomValues !== "function"
+  )
+    return "Браузер не поддерживает безопасный вход через Twitch. Откройте сайт по HTTPS в актуальной версии браузера.";
+  return null;
+}
+
 export async function beginOAuth(consent) {
+  const unavailable = oauthUnavailableReason();
+  if (unavailable) throw new Error(unavailable);
   const verifier = Array.from(crypto.getRandomValues(new Uint8Array(32)), (x) =>
     x.toString(16).padStart(2, "0"),
   ).join("");

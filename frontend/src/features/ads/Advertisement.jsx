@@ -3,6 +3,7 @@ import { ArrowUpRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { request, queryString } from "../../shared/api/http";
 import { Button } from "../../shared/ui/Primitives";
+import { randomId } from "../../shared/randomId";
 
 let browserSession;
 function audience() {
@@ -11,7 +12,7 @@ function audience() {
     browserSession = sessionStorage.getItem("clipstream.ads.session");
   } catch {}
   if (!browserSession) {
-    browserSession = crypto.randomUUID();
+    browserSession = randomId();
     try {
       sessionStorage.setItem("clipstream.ads.session", browserSession);
     } catch {}
@@ -19,7 +20,7 @@ function audience() {
   return browserSession;
 }
 function useAdvertisement(placement, identity) {
-  const [instance] = useState(() => crypto.randomUUID());
+  const [instance] = useState(() => randomId());
   return useQuery({
     queryKey: ["advertisement", placement, identity, instance],
     queryFn: ({ signal }) =>

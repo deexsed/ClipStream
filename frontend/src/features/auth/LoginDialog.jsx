@@ -3,11 +3,12 @@ import { Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { ArrowUpRight } from "lucide-react";
 import { Button, Dialog, Status } from "../../shared/ui/Primitives";
-import { beginOAuth } from "./Session";
+import { beginOAuth, oauthUnavailableReason } from "./Session";
 
 export default function LoginDialog({ open, onClose, config }) {
   const [consent, setConsent] = useState(false);
   const legal = config.data?.legal;
+  const unavailable = oauthUnavailableReason();
   const mutation = useMutation({
     mutationFn: () =>
       beginOAuth({
@@ -65,12 +66,14 @@ export default function LoginDialog({ open, onClose, config }) {
           {!config.data?.auth?.twitch_enabled && (
             <p className="muted">Вход временно недоступен. Попробуйте позже.</p>
           )}
+          {unavailable && <p role="status">{unavailable}</p>}
           <Button
             variant="primary"
             busy={mutation.isPending}
             disabled={
               !legal?.configured ||
               !consent ||
+              Boolean(unavailable) ||
               !config.data?.auth?.twitch_enabled
             }
           >
