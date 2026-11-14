@@ -27,6 +27,7 @@ x-app-environment: &app-environment
   JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
   MYSQL_POOL_SIZE: ${MYSQL_POOL_SIZE:-10}
   HTTP_WORKERS: ${HTTP_WORKERS:-4}
+  STARTUP_TIMEOUT_SECONDS: ${STARTUP_TIMEOUT_SECONDS:-300}
   PROXY_AUTH_SECRET_FILE: /run/secrets/proxy_auth
   MIGRATIONS_DIR: /app/migrations
 x-app: &app
@@ -34,7 +35,7 @@ x-app: &app
   build:
     context: .
     dockerfile: backend/Dockerfile
-  restart: unless-stopped
+  restart: always
   init: true
   read_only: true
   tmpfs: [/tmp]
@@ -64,7 +65,8 @@ services:
       - edge_secrets:/edge-secrets
   db:
     image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
-    restart: unless-stopped
+    restart: always
+    stop_grace_period: 2m
     environment:
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
       MYSQL_DATABASE: ${MYSQL_DATABASE:-clipstream}
@@ -82,7 +84,8 @@ services:
       retries: 30
   redis:
     image: redis:7-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
-    restart: unless-stopped
+    restart: always
+    stop_grace_period: 1m
     user: redis
     command:
       - sh
@@ -116,8 +119,11 @@ services:
       CLIPSTREAM_ROLE: api
     depends_on:
       migrate: {condition: service_completed_successfully}
+      db: {condition: service_healthy, restart: true}
+      redis: {condition: service_healthy, restart: true}
     healthcheck:
       test: [CMD, curl, --fail, --silent, http://127.0.0.1:8080/health]
+      start_period: 300s
       interval: 10s
       timeout: 3s
       retries: 5
@@ -128,6 +134,8 @@ services:
       CLIPSTREAM_ROLE: worker
     depends_on:
       migrate: {condition: service_completed_successfully}
+      db: {condition: service_healthy, restart: true}
+      redis: {condition: service_healthy, restart: true}
   frontend:
     image: clipstream-frontend:local
     build:
@@ -135,7 +143,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         ASSET_BASE_URL: ${ASSET_BASE_URL:-/}
-    restart: unless-stopped
+    restart: always
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
@@ -148,7 +156,7 @@ services:
       retries: 5
   nginx:
     image: nginx:alpine@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72
-    restart: unless-stopped
+    restart: always
     user: 101:101
     entrypoint: [sh, /app/start-edge.sh]
     command: []

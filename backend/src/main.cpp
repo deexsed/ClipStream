@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <boost/asio.hpp>
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <iostream>
@@ -46,15 +48,45 @@
 using namespace clipstream;
 using utils::env;
 namespace {
-unsigned number(const char *key, unsigned fallback, unsigned maximum) {
+unsigned number(const char* key, unsigned fallback, unsigned maximum) {
     auto value = std::stoul(env(key, std::to_string(fallback)));
     if (value < 1 || value > maximum)
         throw std::invalid_argument(std::string("Invalid configuration: ") + key);
     return static_cast<unsigned>(value);
 }
+
+template <class Probe>
+bool wait_for_dependency(const char* name, Probe probe, boost::asio::io_context& ioc, const bool& stopping,
+                         unsigned timeout_seconds) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_seconds);
+    unsigned delay = 1;
+    while (!stopping) {
+        if (probe())
+            return true;
+        const auto remaining = deadline - std::chrono::steady_clock::now();
+        if (remaining <= std::chrono::steady_clock::duration::zero())
+            throw std::runtime_error(std::string("Startup timed out waiting for ") + name);
+        std::cerr << "[Startup] Waiting for " << name << "\n";
+        // Process SIGTERM/SIGINT during backoff instead of blocking shutdown with sleep.
+        ioc.run_for(std::min(remaining, std::chrono::steady_clock::duration(std::chrono::seconds(delay))));
+        delay = std::min(delay * 2, 5u);
+    }
+    return false;
+}
 } // namespace
 int main() {
     try {
+        std::cout << std::unitbuf;
+        boost::asio::io_context ioc;
+        bool stopping = false;
+        boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
+        signals.async_wait([&](const auto& error, int) {
+            if (!error) {
+                stopping = true;
+                ioc.stop();
+            }
+        });
+        const auto startup_timeout = number("STARTUP_TIMEOUT_SECONDS", 300, 3600);
         const auto role = env("CLIPSTREAM_ROLE", "api");
         if (role != "api" && role != "worker" && role != "migrate")
             throw std::invalid_argument("CLIPSTREAM_ROLE must be api, worker or migrate");
@@ -67,7 +99,33 @@ int main() {
             .pool_size = role == "migrate" ? 1u : number("MYSQL_POOL_SIZE", 12, 128),
             .read_timeout_seconds = role == "migrate" ? number("MYSQL_MIGRATION_TIMEOUT", 300, 3600) : 5u,
             .write_timeout_seconds = role == "migrate" ? number("MYSQL_MIGRATION_TIMEOUT", 300, 3600) : 5u};
-        database::ConnectionPool db_pool(db_cfg);
+        std::unique_ptr<database::ConnectionPool> db_owner;
+        if (!wait_for_dependency(
+                "MySQL",
+                [&] {
+                    try {
+                        db_owner = std::make_unique<database::ConnectionPool>(db_cfg);
+                        return true;
+                    } catch (const database::Error& error) {
+                        // Authentication, TLS and configuration errors must fail visibly.
+                        switch (error.code) {
+                        case 1040: // Too many connections.
+                        case 1053: // Server shutdown in progress.
+                        case 1203: // User connection limit.
+                        case 2002: // Local server unavailable.
+                        case 2003: // TCP connection unavailable.
+                        case 2005: // Docker DNS not ready.
+                        case 2006: // Server gone away.
+                        case 2013: // Connection lost during initialization.
+                            return false;
+                        default:
+                            throw;
+                        }
+                    }
+                },
+                ioc, stopping, startup_timeout))
+            return 0;
+        auto& db_pool = *db_owner;
         if (role == "migrate") {
             database::migrate(db_pool, env("MIGRATIONS_DIR", "database/migrations"));
             return 0;
@@ -87,14 +145,16 @@ int main() {
         repositories::AdsRepository ads_repo(db_pool);
         services::CacheService cache_service(env("REDIS_HOST", "127.0.0.1"),
                                              static_cast<uint16_t>(number("REDIS_PORT", 6379, 65535)));
+        if (!wait_for_dependency(
+                "Redis", [&] { return cache_service.ping_redis(); }, ioc, stopping, startup_timeout))
+            return 0;
         services::ClipService clip_service(clip_repo, user_repo, cache_service);
         services::TwitchService twitch_service(env("TWITCH_CLIENT_ID"), env("TWITCH_CLIENT_SECRET"),
                                                &cache_service);
         services::AuthService auth_service(user_repo, jwt_secret, number("JWT_EXPIRATION_HOURS", 24, 168));
         auth_service.bind_twitch(twitch_service, cache_service);
         twitch_service.set_user_token_refresh_handler(
-            [&](const std::string &token) { return auth_service.resolve_user_token(token); });
-        boost::asio::io_context ioc;
+            [&](const std::string& token) { return auth_service.resolve_user_token(token); });
         services::SyncService sync_service(twitch_service, clip_repo, db_pool, ioc, &cache_service);
         std::vector<std::string> broadcasters;
         std::istringstream ids(env("TWITCH_EVENTSUB_BROADCASTER_IDS"));
@@ -109,20 +169,15 @@ int main() {
             };
         services::EventSubService eventsub_service(twitch_service, cache_service, auth_service, broadcasters,
                                                    eventsub_token);
-        boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
-        signals.async_wait([&](const auto &error, int) {
-            if (!error)
-                ioc.stop();
-        });
         if (role == "worker") {
             auth_service.start_validation();
-            const bool poll_twitch=!env("TWITCH_CLIENT_ID").empty() && !env("TWITCH_CLIENT_SECRET").empty();
+            const bool poll_twitch = !env("TWITCH_CLIENT_ID").empty() && !env("TWITCH_CLIENT_SECRET").empty();
             if (poll_twitch) {
                 sync_service.seed_games();
                 if (!broadcasters.empty())
                     eventsub_service.start();
             }
-            sync_service.start_periodic(number("CLIP_SYNC_INTERVAL_MINUTES", 1, 120),poll_twitch);
+            sync_service.start_periodic(number("CLIP_SYNC_INTERVAL_MINUTES", 1, 120), poll_twitch);
             std::cout << "[Worker] Started\n";
             ioc.run();
             eventsub_service.stop();
@@ -131,7 +186,7 @@ int main() {
             return 0;
         }
         server::Router router;
-        router.use([&](server::Request &req, server::Response &response) {
+        router.use([&](server::Request& req, server::Response& response) {
             if (req.path.starts_with("/health") || req.path == "/config")
                 return true;
             if (security_repo.is_ip_banned(req.client_address)) {
@@ -142,7 +197,7 @@ int main() {
         });
         router.use(middleware::make_auth_middleware(auth_service));
         // Mutation quotas live in Redis and apply across API replicas.
-        router.use([&](server::Request &req, server::Response &response) {
+        router.use([&](server::Request& req, server::Response& response) {
             if (req.method == server::http::verb::get && req.path != "/ads/serve")
                 return true;
             const auto key =
@@ -163,7 +218,8 @@ int main() {
         controllers::EventSubController eventsub_ctrl(eventsub_service);
         controllers::StaffController staff_ctrl(auth_service, cache_service, clip_repo);
         repositories::SyncRepository sync_repo(db_pool);
-        controllers::AdminController admin_ctrl(auth_service, user_repo, clip_repo, sync_repo, twitch_service);
+        controllers::AdminController admin_ctrl(auth_service, user_repo, clip_repo, sync_repo,
+                                                twitch_service);
         controllers::AdsController ads_ctrl(auth_service, ads_repo, jwt_secret);
         controllers::SocialController social_ctrl(auth_service, clip_service, twitch_service, user_repo,
                                                   notif_repo, profile_repo);
@@ -180,12 +236,11 @@ int main() {
         admin_ctrl.register_routes(router);
         ads_ctrl.register_routes(router);
         moderation_ctrl.register_routes(router);
-        router.get("/config", [](const server::Request &) -> server::Response {
-            return {200, utils::runtime_config()};
-        });
+        router.get("/config",
+                   [](const server::Request&) -> server::Response { return {200, utils::runtime_config()}; });
         router.get("/health/live",
-                   [](const server::Request &) -> server::Response { return {200, {{"status", "alive"}}}; });
-        auto ready = [&](const server::Request &) -> server::Response {
+                   [](const server::Request&) -> server::Response { return {200, {{"status", "alive"}}}; });
+        auto ready = [&](const server::Request&) -> server::Response {
             bool okay = database::schema_ready(db_pool) && cache_service.ping_redis();
             return {okay ? 200u : 503u, {{"status", okay ? "ready" : "unavailable"}}};
         };
@@ -202,7 +257,7 @@ int main() {
         executor.stop();
         executor.join();
         return 0;
-    } catch (const std::exception &error) {
+    } catch (const std::exception& error) {
         std::cerr << "[Fatal] " << error.what() << "\n";
         return 1;
     }
