@@ -133,10 +133,18 @@ export default function ClipPage({ feed = false }) {
       setAction("share");
     }
   };
+  const emptyFeed =
+    feed &&
+    !params.get("start") &&
+    !queue.isPending &&
+    !queue.error &&
+    rows.length === 0;
   const error =
-    !validId && (!feed || !queue.isPending)
+    queue.error ||
+    clipQuery.error ||
+    (!validId && !emptyFeed && (!feed || !queue.isPending)
       ? new Error("Клип не найден. Выберите другой ролик.")
-      : clipQuery.error || queue.error;
+      : null);
   return (
     <div className={`page watch-page ${feed ? "watch-feed" : ""}`}>
       <div className="watch-topline">
@@ -171,6 +179,7 @@ export default function ClipPage({ feed = false }) {
       <Status
         error={error}
         loading={(feed && queue.isPending) || (validId && clipQuery.isPending)}
+        empty={emptyFeed && "Нет клипов для текущих настроек"}
         onRetry={() => (validId ? clipQuery.refetch() : queue.refetch())}
       >
         {clip && (
@@ -328,6 +337,27 @@ export default function ClipPage({ feed = false }) {
           </div>
         )}
       </Status>
+      {emptyFeed && (
+        <p className="muted">
+          Проверьте выбранные языки
+          {session.user ? (
+            <>
+              {" "}
+              и{" "}
+              <Link
+                className="text-link"
+                to={`/u/${encodeURIComponent(session.user.username)}?tab=settings`}
+              >
+                настройки ленты
+              </Link>
+              . Строгий фильтр скрывает клипы с непроверенной возрастной
+              классификацией.
+            </>
+          ) : (
+            ". Попробуйте другую подборку в обзоре."
+          )}
+        </p>
+      )}
       <Dialog
         open={action === "share"}
         onClose={() => setAction(null)}

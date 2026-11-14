@@ -23,7 +23,7 @@
 
 | Проверка | Фактический результат |
 | --- | --- |
-| Frontend Vitest | 26/26 PASS, 6 test files: сеть, session/logout, диалог, профили, реклама, админка, iframe identity, документы и безопасные overrides |
+| Frontend Vitest | 31/31 PASS, 7 test files: сеть, session/logout, OAuth callback/remount/state, диалог, профили, реклама, админка, iframe identity, пустая лента, документы и безопасные overrides |
 | Backend build + CTest с отдельными MySQL/Redis | 6/6 PASS, 0 skips, 7,34 s; core/database/ads/profile/redis/Twitch contracts |
 | Production Docker build | Backend и frontend собраны. В build-stage без внешних DB/Redis 3 integration suites пропущены; полный запуск выше выполнен отдельно |
 | Матрица HTTP чтения | 48/48 PASS: guest/auth feeds, сортировки/периоды, home/recommendations/related/trends, profiles, social и admin reads |
@@ -68,7 +68,9 @@ Backend regressions включают конкурентные vote toggles, ог
 
 ## Что нельзя считать подтверждённым
 
-Реальный Twitch OAuth вход `deexsd`, его bootstrap grant и длительный live EventSub требуют действующих credentials и интерактивного входа владельца. В тестовом стенде Twitch credentials оставлены пустыми; synthetic JWT используется только временным loopback harness. Подготовлены [точные инструкции OAuth](twitch-oauth.md); реальные секреты в исходниках отсутствуют. Ранее раскрытый секрет нужно заменить перед публичным запуском.
+Последующая проверка основного Compose-проекта `clipstream` подтвердила реальный OAuth `deexsd`: HTTP 200 для обмена и authenticated reads, Twitch ID `74192884`, роль `admin`, singleton bootstrap completed_by=1 и запись `bootstrap_admin` в аудите. Default роли новых пользователей — `user`; доступ к role mutation требует действующего admin на сервере. Реальные секреты в исходниках отсутствуют. Длительный live EventSub не проверен. В прежнем изолированном тестовом стенде credentials были пустыми, synthetic JWT применялся только временным loopback harness.
+
+По скриншоту владельца воспроизведён frontend сбой: remount callback после очистки query терял выполняющийся обмен и показывал «Нет данных авторизации», хотя сервер мог уже завершить вход. Регрессионный тест сначала упал с тем же текстом; после сохранения in-flight операции по state/verifier в памяти прошёл. Дополнительно проверены StrictMode/single exchange, чистый callback с подтверждённым сеансом и отказ при несовпадении state. Пустая лента из-за фильтров теперь не показывается как «Клип не найден»; возрастная политика и настройки пользователя автоматически не ослабляются.
 
 Клипы UI fixtures имеют синтетические slugs: ошибка Twitch player на них ожидаема. Проверены границы iframe, навигация и сохранение node при vote, а не воспроизведение этих несуществующих клипов. Реальный preroll video playback и impression проверены отдельно. До ширины 400 px используется внешний Twitch link согласно минимальному размеру embed.
 

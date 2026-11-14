@@ -300,15 +300,15 @@ export default function DiscoverPage({ mode }) {
             !result.error &&
             clips.length === 0 && (
               <p className="muted">
-                Строгий фильтр возрастных ограничений скрывает клипы с
-                непроверенной классификацией. Проверьте{" "}
+                Проверьте выбранные языки и{" "}
                 <Link
                   className="text-link"
                   to={`/u/${encodeURIComponent(session.user.username)}?tab=settings`}
                 >
                   настройки ленты
                 </Link>
-                .
+                . Если включён строгий фильтр, клипы с непроверенной возрастной
+                классификацией скрываются.
               </p>
             )}
         </>
