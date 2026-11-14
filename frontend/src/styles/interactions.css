@@ -166,6 +166,32 @@
 }
 
 /* Color/outline feedback remains; spatial motion is optional. */
+.ui-select-content[data-state="closed"] {
+  /* Release Radix focus/pointer locks even when input modality changes mid-exit. */
+  display: none;
+  animation: none;
+  pointer-events: none;
+}
+
+/* Text inputs match :focus-visible even after a pointer click. Honor the
+   actual input modality so typing after a click does not summon a ring. */
+:root[data-input="pointer"] :focus-visible {
+  outline: none;
+}
+:root .header-search input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+:root[data-input="keyboard"] .header-search:focus-within {
+  outline: 2px solid #bba6ef;
+  outline-offset: 3px;
+}
+:root[data-input="pointer"] .header-search:focus-within {
+  outline: none;
+  border-color: #615773;
+  box-shadow: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root
     :is(

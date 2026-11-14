@@ -382,13 +382,6 @@ select {
   padding: 10px 0;
   font-size: 0.88rem;
 }
-.header-search kbd {
-  font: 11px inherit;
-  white-space: nowrap;
-  border: 1px solid #43434e;
-  border-radius: 4px;
-  padding: 1px 4px;
-}
 .header-actions {
   display: flex;
   justify-content: flex-end;
@@ -1514,9 +1507,6 @@ td .button {
   }
   .header-search input::placeholder {
     font-size: 12px;
-  }
-  .header-search kbd {
-    display: none;
   }
   .header-actions {
     gap: 0;

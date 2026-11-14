@@ -1,4 +1,5 @@
 import { Suspense, useEffect, useRef, useState } from "react";
+import { isKeyboardNavigation, isSearchShortcut } from "../shared/input";
 import {
   NavLink,
   Link,
@@ -83,9 +84,29 @@ function ShellContent() {
     document.getElementById("page-content")?.scrollTo(0, 0);
   }, [location.pathname]);
   useEffect(() => {
+    const keyboard = (event) => {
+      if (isKeyboardNavigation(event))
+        document.documentElement.dataset.input = "keyboard";
+    };
+    const pointer = () => {
+      document.documentElement.dataset.input = "pointer";
+    };
+    document.addEventListener("keydown", keyboard, true);
+    document.addEventListener("pointerdown", pointer, true);
+    return () => {
+      document.removeEventListener("keydown", keyboard, true);
+      document.removeEventListener("pointerdown", pointer, true);
+    };
+  }, []);
+  useEffect(() => {
     const onKey = (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === "k") {
+      const platform = navigator.userAgentData?.platform || navigator.platform;
+      if (
+        isSearchShortcut(event, platform) &&
+        !document.querySelector("dialog[open]")
+      ) {
         event.preventDefault();
+        document.documentElement.dataset.input = "keyboard";
         search.current?.focus();
       }
     };
@@ -134,7 +155,6 @@ function ShellContent() {
             autoComplete="off"
             enterKeyHint="search"
           />
-          <kbd>⌘ K</kbd>
         </form>
         <div className="header-actions">
           <IconButton
