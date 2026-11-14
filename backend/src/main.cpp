@@ -1,495 +1,207 @@
-#include <iostream>
+#include <boost/asio.hpp>
+#include <csignal>
 #include <cstdlib>
+#include <iostream>
+#include <sstream>
 #include <string>
 #include <thread>
-#include <sstream>
 #include <vector>
-#include <boost/asio.hpp>
 
 #include "database/ConnectionPool.hpp"
+#include "database/Migrations.hpp"
+#include "server/BlockingExecutor.hpp"
 #include "server/HttpServer.hpp"
 #include "server/Router.hpp"
+#include "utils/Environment.hpp"
+#include "utils/RuntimeConfig.hpp"
 
-#include "repositories/UserRepository.hpp"
+#include "repositories/AccountSecurityRepository.hpp"
+#include "repositories/AdsRepository.hpp"
 #include "repositories/ClipRepository.hpp"
 #include "repositories/CommentRepository.hpp"
 #include "repositories/NotificationRepository.hpp"
+#include "repositories/UserRepository.hpp"
 
 #include "services/AuthService.hpp"
 #include "services/CacheService.hpp"
 #include "services/ClipService.hpp"
-#include "services/TwitchService.hpp"
 #include "services/SyncService.hpp"
+#include "services/TwitchService.hpp"
 
+#include "controllers/AdminController.hpp"
+#include "controllers/AdsController.hpp"
 #include "controllers/AuthController.hpp"
 #include "controllers/ClipController.hpp"
 #include "controllers/CommentController.hpp"
 #include "controllers/EventSubController.hpp"
-#include "controllers/StaffController.hpp"
-#include "controllers/AdminController.hpp"
 #include "controllers/ModerationController.hpp"
-#include "controllers/SocialController.hpp"
 #include "controllers/NotificationController.hpp"
+#include "controllers/ProfileController.hpp"
+#include "controllers/SocialController.hpp"
+#include "controllers/StaffController.hpp"
+#include "repositories/ProfileRepository.hpp"
 
 #include "middleware/AuthMiddleware.hpp"
 
 using namespace clipstream;
-
-static std::string env(const char* name, const std::string& fallback = "") {
-    const char* val = std::getenv(name);
-    return val ? std::string(val) : fallback;
+using utils::env;
+namespace {
+unsigned number(const char *key, unsigned fallback, unsigned maximum) {
+    auto value = std::stoul(env(key, std::to_string(fallback)));
+    if (value < 1 || value > maximum)
+        throw std::invalid_argument(std::string("Invalid configuration: ") + key);
+    return static_cast<unsigned>(value);
 }
-
-static int clip_sync_interval_minutes() {
-    const char* raw = std::getenv("CLIP_SYNC_INTERVAL_MINUTES");
-    if (!raw || !*raw) return 5;
-    try {
-        int v = std::stoi(raw);
-        if (v < 1) return 1;
-        if (v > 120) return 120;
-        return v;
-    } catch (...) {
-        return 5;
-    }
-}
-
-static bool column_exists(MYSQL* c, const std::string& table, const std::string& column, const std::string& schema) {
-    std::string sql =
-        "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='"
-        + schema + "' AND TABLE_NAME='" + table + "' AND COLUMN_NAME='" + column + "' LIMIT 1";
-    if (mysql_query(c, sql.c_str()) != 0) return false;
-    MYSQL_RES* res = mysql_store_result(c);
-    if (!res) return false;
-    bool exists = mysql_fetch_row(res) != nullptr;
-    mysql_free_result(res);
-    return exists;
-}
-
-static bool index_exists(MYSQL* c, const std::string& table, const std::string& index_name, const std::string& schema) {
-    std::string sql = "SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='" + schema
-        + "' AND TABLE_NAME='" + table + "' AND INDEX_NAME='" + index_name + "' LIMIT 1";
-    if (mysql_query(c, sql.c_str()) != 0) return false;
-    MYSQL_RES* res = mysql_store_result(c);
-    if (!res) return false;
-    bool exists = mysql_fetch_row(res) != nullptr;
-    mysql_free_result(res);
-    return exists;
-}
-
-static std::vector<std::string> split_csv(const std::string& csv) {
-    std::vector<std::string> out;
-    std::stringstream ss(csv);
-    std::string item;
-    while (std::getline(ss, item, ',')) {
-        if (!item.empty()) out.push_back(item);
-    }
-    return out;
-}
-
+} // namespace
 int main() {
     try {
+        const auto role = env("CLIPSTREAM_ROLE", "api");
+        if (role != "api" && role != "worker" && role != "migrate")
+            throw std::invalid_argument("CLIPSTREAM_ROLE must be api, worker or migrate");
         database::DbConfig db_cfg{
-            .host     = env("MYSQL_HOST", "127.0.0.1"),
-            .port     = static_cast<uint16_t>(std::stoi(env("MYSQL_PORT", "3306"))),
+            .host = env("MYSQL_HOST", "127.0.0.1"),
+            .port = static_cast<uint16_t>(number("MYSQL_PORT", 3306, 65535)),
             .database = env("MYSQL_DATABASE", "clipstream"),
-            .user     = env("MYSQL_USER", "clipstream"),
-            .password = env("MYSQL_PASSWORD", "changeme_secret"),
-            .pool_size = 10
-        };
-
-        std::string redis_host   = env("REDIS_HOST", "127.0.0.1");
-        uint16_t redis_port      = static_cast<uint16_t>(std::stoi(env("REDIS_PORT", "6379")));
-        std::string jwt_secret   = env("JWT_SECRET", "default_jwt_secret_change_me_32ch");
-        int jwt_exp              = std::stoi(env("JWT_EXPIRATION_HOURS", "24"));
-        std::string redirect_uri = env("TWITCH_REDIRECT_URI", "http://localhost/auth/callback");
-        uint16_t server_port     = 8080;
-
+            .user = env("MYSQL_USER", "clipstream"),
+            .password = env("MYSQL_PASSWORD"),
+            .pool_size = role == "migrate" ? 1u : number("MYSQL_POOL_SIZE", 12, 128),
+            .read_timeout_seconds = role == "migrate" ? number("MYSQL_MIGRATION_TIMEOUT", 300, 3600) : 5u,
+            .write_timeout_seconds = role == "migrate" ? number("MYSQL_MIGRATION_TIMEOUT", 300, 3600) : 5u};
         database::ConnectionPool db_pool(db_cfg);
-
-        // Schema migrations (best-effort, idempotent)
-        {
-            database::ScopedConnection conn(db_pool);
-            const auto& schema = db_cfg.database;
-            if (!column_exists(conn.raw(), "clips", "vod_id", schema))
-                mysql_query(conn.raw(), "ALTER TABLE clips ADD COLUMN vod_id VARCHAR(64) DEFAULT NULL");
-            if (!column_exists(conn.raw(), "clips", "vod_offset", schema))
-                mysql_query(conn.raw(), "ALTER TABLE clips ADD COLUMN vod_offset INT DEFAULT 0");
-            if (!column_exists(conn.raw(), "clips", "twitch_created_at", schema))
-                mysql_query(conn.raw(), "ALTER TABLE clips ADD COLUMN twitch_created_at VARCHAR(64) DEFAULT NULL");
-            if (!column_exists(conn.raw(), "clips", "broadcaster_avatar", schema))
-                mysql_query(conn.raw(), "ALTER TABLE clips ADD COLUMN broadcaster_avatar VARCHAR(255) DEFAULT ''");
-            if (!column_exists(conn.raw(), "clips", "broadcaster_id", schema))
-                mysql_query(conn.raw(), "ALTER TABLE clips ADD COLUMN broadcaster_id VARCHAR(64) DEFAULT ''");
-            if (!column_exists(conn.raw(), "users", "twitch_access_token", schema))
-                mysql_query(conn.raw(), "ALTER TABLE users ADD COLUMN twitch_access_token TEXT NULL");
-            if (!column_exists(conn.raw(), "users", "twitch_refresh_token", schema))
-                mysql_query(conn.raw(), "ALTER TABLE users ADD COLUMN twitch_refresh_token TEXT NULL");
-            if (!column_exists(conn.raw(), "users", "twitch_token_expires_at", schema))
-                mysql_query(conn.raw(), "ALTER TABLE users ADD COLUMN twitch_token_expires_at VARCHAR(64) NULL");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS user_recommendations ("
-                "user_id BIGINT UNSIGNED PRIMARY KEY,"
-                "recommended_broadcasters_json JSON NULL,"
-                "calculated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                "CONSTRAINT fk_user_reco_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
-                ")");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS app_settings ("
-                "setting_key VARCHAR(128) PRIMARY KEY,"
-                "setting_value TEXT NOT NULL,"
-                "updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
-                ")");
-            if (!column_exists(conn.raw(), "clips", "title_fingerprint", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE clips ADD COLUMN title_fingerprint VARCHAR(16) NOT NULL DEFAULT '' AFTER title");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS user_clip_engagement ("
-                "user_id BIGINT UNSIGNED NOT NULL,"
-                "clip_id BIGINT UNSIGNED NOT NULL,"
-                "watch_time_sec INT UNSIGNED NOT NULL DEFAULT 0,"
-                "max_position_sec INT UNSIGNED NOT NULL DEFAULT 0,"
-                "completion_ratio FLOAT NOT NULL DEFAULT 0,"
-                "early_skip TINYINT(1) NOT NULL DEFAULT 0,"
-                "replay_count INT UNSIGNED NOT NULL DEFAULT 0,"
-                "updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
-                "PRIMARY KEY (user_id, clip_id),"
-                "CONSTRAINT fk_uce_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,"
-                "CONSTRAINT fk_uce_clip FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS user_feed_blocks ("
-                "user_id BIGINT UNSIGNED NOT NULL,"
-                "target_key VARCHAR(160) NOT NULL,"
-                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                "PRIMARY KEY (user_id, target_key),"
-                "CONSTRAINT fk_ufb_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS feature_store_clip ("
-                "clip_id BIGINT UNSIGNED PRIMARY KEY,"
-                "updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
-                "age_hours FLOAT NOT NULL DEFAULT 0,"
-                "velocity_score FLOAT NOT NULL DEFAULT 0,"
-                "er_like FLOAT NOT NULL DEFAULT 0,"
-                "freshness_decay FLOAT NOT NULL DEFAULT 0,"
-                "CONSTRAINT fk_fsc_clip FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS feature_store_user ("
-                "user_id BIGINT UNSIGNED PRIMARY KEY,"
-                "updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
-                "top_games_json JSON NULL,"
-                "affinity_entropy FLOAT NULL,"
-                "watch_sec_7d INT UNSIGNED NOT NULL DEFAULT 0,"
-                "clips_viewed_7d INT UNSIGNED NOT NULL DEFAULT 0,"
-                "CONSTRAINT fk_fsu_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS analytics_sessions ("
-                "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
-                "user_id BIGINT UNSIGNED NOT NULL,"
-                "session_id VARCHAR(64) NOT NULL,"
-                "started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                "last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
-                "total_watch_sec INT UNSIGNED NOT NULL DEFAULT 0,"
-                "clips_viewed INT UNSIGNED NOT NULL DEFAULT 0,"
-                "UNIQUE KEY uq_analytics_session (user_id, session_id),"
-                "INDEX idx_analytics_sess_user (user_id, last_seen_at),"
-                "CONSTRAINT fk_as_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS analytics_feed_events ("
-                "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
-                "user_id BIGINT UNSIGNED NOT NULL,"
-                "session_id VARCHAR(64) DEFAULT NULL,"
-                "event_type ENUM('watch_heartbeat','watch_session_end','home_impression') NOT NULL,"
-                "block_type VARCHAR(32) NOT NULL DEFAULT '',"
-                "clip_id BIGINT UNSIGNED DEFAULT NULL,"
-                "value DOUBLE NULL,"
-                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                "INDEX idx_afe_user_time (user_id, created_at),"
-                "INDEX idx_afe_event (event_type, created_at),"
-                "CONSTRAINT fk_afe_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS analytics_user_daily ("
-                "user_id BIGINT UNSIGNED NOT NULL,"
-                "activity_date DATE NOT NULL,"
-                "watch_sec INT UNSIGNED NOT NULL DEFAULT 0,"
-                "clips_viewed INT UNSIGNED NOT NULL DEFAULT 0,"
-                "PRIMARY KEY (user_id, activity_date),"
-                "CONSTRAINT fk_aud_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            if (!column_exists(conn.raw(), "users", "account_blocked", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE users ADD COLUMN account_blocked TINYINT(1) NOT NULL DEFAULT 0");
-            if (!column_exists(conn.raw(), "users", "chat_banned_until", schema))
-                mysql_query(conn.raw(), "ALTER TABLE users ADD COLUMN chat_banned_until TIMESTAMP NULL DEFAULT NULL");
-            if (!column_exists(conn.raw(), "users", "chat_ban_reason", schema))
-                mysql_query(conn.raw(), "ALTER TABLE users ADD COLUMN chat_ban_reason VARCHAR(512) NULL");
-            if (!column_exists(conn.raw(), "users", "chat_banned_by", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE users ADD COLUMN chat_banned_by BIGINT UNSIGNED NULL");
-            if (!column_exists(conn.raw(), "users", "legal_consent_at", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE users ADD COLUMN legal_consent_at VARCHAR(64) NULL DEFAULT NULL");
-            if (!column_exists(conn.raw(), "users", "legal_consent_version", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE users ADD COLUMN legal_consent_version VARCHAR(32) NULL DEFAULT NULL");
-            mysql_query(conn.raw(),
-                "ALTER TABLE users MODIFY COLUMN `role` ENUM('user','moderator','admin','vip') NOT NULL DEFAULT 'user'");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS user_badge_history ("
-                "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
-                "user_id BIGINT UNSIGNED NOT NULL,"
-                "badge VARCHAR(32) NOT NULL,"
-                "event_type ENUM('granted','revoked') NOT NULL DEFAULT 'granted',"
-                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                "INDEX idx_ubh_user (user_id, created_at DESC),"
-                "CONSTRAINT fk_ubh_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS content_reports ("
-                "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
-                "reporter_id BIGINT UNSIGNED NOT NULL,"
-                "target_type ENUM('clip','comment','user') NOT NULL,"
-                "target_id BIGINT UNSIGNED NOT NULL,"
-                "reason VARCHAR(512) NOT NULL DEFAULT '',"
-                "status ENUM('open','reviewed','dismissed') NOT NULL DEFAULT 'open',"
-                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                "INDEX idx_cr_open (status, created_at DESC),"
-                "CONSTRAINT fk_cr_reporter FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS user_settings ("
-                "user_id BIGINT UNSIGNED PRIMARY KEY,"
-                "hide_mature TINYINT(1) NOT NULL DEFAULT 1,"
-                "mute_keywords JSON NULL,"
-                "clip_languages JSON NULL,"
-                "CONSTRAINT fk_us_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS clip_promotions ("
-                "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
-                "clip_id BIGINT UNSIGNED NOT NULL,"
-                "boost_score DOUBLE NOT NULL DEFAULT 40,"
-                "placement VARCHAR(24) NOT NULL DEFAULT 'all',"
-                "label VARCHAR(64) NOT NULL DEFAULT '',"
-                "starts_at TIMESTAMP NULL DEFAULT NULL,"
-                "ends_at TIMESTAMP NULL DEFAULT NULL,"
-                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                "INDEX idx_cp_clip (clip_id),"
-                "INDEX idx_cp_place (placement),"
-                "CONSTRAINT fk_cp_clip FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS compliance_log ("
-                "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
-                "action VARCHAR(64) NOT NULL,"
-                "clip_id BIGINT UNSIGNED NULL,"
-                "actor_user_id BIGINT UNSIGNED NULL,"
-                "details_json JSON NULL,"
-                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                "INDEX idx_cl_clip (clip_id),"
-                "INDEX idx_cl_time (created_at DESC)"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS comment_votes ("
-                "user_id BIGINT UNSIGNED NOT NULL,"
-                "comment_id BIGINT UNSIGNED NOT NULL,"
-                "vote TINYINT NOT NULL,"
-                "PRIMARY KEY (user_id, comment_id),"
-                "INDEX idx_cv_comment (comment_id),"
-                "CONSTRAINT fk_cv_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,"
-                "CONSTRAINT fk_cv_comment FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS notifications ("
-                "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
-                "user_id BIGINT UNSIGNED NOT NULL,"
-                "type VARCHAR(32) NOT NULL,"
-                "actor_id BIGINT UNSIGNED NOT NULL,"
-                "payload JSON NULL,"
-                "read_at TIMESTAMP NULL DEFAULT NULL,"
-                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                "INDEX idx_notif_user_time (user_id, created_at DESC),"
-                "INDEX idx_notif_user_unread (user_id, read_at),"
-                "CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,"
-                "CONSTRAINT fk_notif_actor FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS friendships ("
-                "user_id BIGINT UNSIGNED NOT NULL,"
-                "friend_id BIGINT UNSIGNED NOT NULL,"
-                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                "PRIMARY KEY (user_id, friend_id),"
-                "INDEX idx_friends_friend (friend_id),"
-                "CONSTRAINT fk_friends_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,"
-                "CONSTRAINT fk_friends_peer FOREIGN KEY (friend_id) REFERENCES users(id) ON DELETE CASCADE,"
-                "CONSTRAINT chk_friends_ne CHECK (user_id <> friend_id)"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS friend_requests ("
-                "requester_id BIGINT UNSIGNED NOT NULL,"
-                "addressee_id BIGINT UNSIGNED NOT NULL,"
-                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                "PRIMARY KEY (requester_id, addressee_id),"
-                "INDEX idx_fr_addressee (addressee_id),"
-                "CONSTRAINT fk_fr_req FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,"
-                "CONSTRAINT fk_fr_add FOREIGN KEY (addressee_id) REFERENCES users(id) ON DELETE CASCADE,"
-                "CONSTRAINT chk_fr_ne CHECK (requester_id <> addressee_id)"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS user_achievements ("
-                "user_id BIGINT UNSIGNED NOT NULL,"
-                "achievement_key VARCHAR(64) NOT NULL,"
-                "earned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                "PRIMARY KEY (user_id, achievement_key),"
-                "INDEX idx_ua_time (user_id, earned_at DESC),"
-                "CONSTRAINT fk_ua_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS profile_wall_posts ("
-                "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
-                "profile_owner_id BIGINT UNSIGNED NOT NULL,"
-                "author_id BIGINT UNSIGNED NOT NULL,"
-                "body TEXT NOT NULL,"
-                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                "INDEX idx_wall_owner (profile_owner_id, created_at DESC),"
-                "CONSTRAINT fk_wall_owner FOREIGN KEY (profile_owner_id) REFERENCES users(id) ON DELETE CASCADE,"
-                "CONSTRAINT fk_wall_author FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            mysql_query(conn.raw(),
-                "CREATE TABLE IF NOT EXISTS profile_wall_mentions ("
-                "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
-                "post_id BIGINT UNSIGNED NOT NULL,"
-                "mention_kind ENUM('user','clip') NOT NULL,"
-                "mentioned_user_id BIGINT UNSIGNED NULL,"
-                "mentioned_clip_id BIGINT UNSIGNED NULL,"
-                "INDEX idx_wm_post (post_id),"
-                "CONSTRAINT fk_wm_post FOREIGN KEY (post_id) REFERENCES profile_wall_posts(id) ON DELETE CASCADE,"
-                "CONSTRAINT fk_wm_user FOREIGN KEY (mentioned_user_id) REFERENCES users(id) ON DELETE CASCADE,"
-                "CONSTRAINT fk_wm_clip FOREIGN KEY (mentioned_clip_id) REFERENCES clips(id) ON DELETE CASCADE"
-                ") ENGINE=InnoDB");
-            if (!column_exists(conn.raw(), "clips", "is_mature", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE clips ADD COLUMN is_mature TINYINT(1) NOT NULL DEFAULT 0");
-            if (!column_exists(conn.raw(), "clips", "unavailable_at", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE clips ADD COLUMN unavailable_at TIMESTAMP NULL DEFAULT NULL");
-            if (!column_exists(conn.raw(), "clips", "removed_reason", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE clips ADD COLUMN removed_reason VARCHAR(64) NULL DEFAULT NULL");
-            if (!column_exists(conn.raw(), "clips", "broadcaster_lang", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE clips ADD COLUMN broadcaster_lang VARCHAR(16) NOT NULL DEFAULT ''");
-            if (!column_exists(conn.raw(), "user_settings", "clip_languages", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE user_settings ADD COLUMN clip_languages JSON NULL");
-            if (!column_exists(conn.raw(), "clips", "twitch_created_ts", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE clips ADD COLUMN twitch_created_ts DATETIME GENERATED ALWAYS AS ("
-                    "STR_TO_DATE(NULLIF(TRIM(twitch_created_at),''), '%Y-%m-%dT%H:%i:%sZ')) STORED");
-            if (!index_exists(conn.raw(), "clips", "idx_clips_feed_ts", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE clips ADD INDEX idx_clips_feed_ts (twitch_created_ts, view_count)");
-            if (!index_exists(conn.raw(), "view_history", "idx_vh_user_clip", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE view_history ADD INDEX idx_vh_user_clip (user_id, clip_id)");
-            if (!column_exists(conn.raw(), "clips", "clip_creator_twitch_id", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE clips ADD COLUMN clip_creator_twitch_id VARCHAR(64) NOT NULL DEFAULT ''");
-            if (!column_exists(conn.raw(), "clips", "clip_creator_login", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE clips ADD COLUMN clip_creator_login VARCHAR(128) NOT NULL DEFAULT ''");
-            if (!index_exists(conn.raw(), "clips", "idx_clips_creator_tid", schema))
-                mysql_query(conn.raw(),
-                    "ALTER TABLE clips ADD INDEX idx_clips_creator_tid (clip_creator_twitch_id)");
+        if (role == "migrate") {
+            database::migrate(db_pool, env("MIGRATIONS_DIR", "database/migrations"));
+            return 0;
         }
-        std::cout << "[Main] Schema migrations applied\n";
-
-        repositories::UserRepository    user_repo(db_pool);
-        repositories::ClipRepository    clip_repo(db_pool);
-        repositories::CommentRepository     comment_repo(db_pool);
+        if (!database::schema_ready(db_pool))
+            throw std::runtime_error("Run the migration role before starting application services");
+        (void)env("PROXY_AUTH_SECRET"); // Fail startup on an unreadable configured gateway secret.
+        auto jwt_secret = env("JWT_SECRET");
+        if (jwt_secret.size() < 32)
+            throw std::invalid_argument("JWT_SECRET must contain at least 32 characters");
+        repositories::UserRepository user_repo(db_pool);
+        repositories::ProfileRepository profile_repo(db_pool);
+        repositories::AccountSecurityRepository security_repo(db_pool);
+        repositories::ClipRepository clip_repo(db_pool);
+        repositories::CommentRepository comment_repo(db_pool);
         repositories::NotificationRepository notif_repo(db_pool);
-
-        clip_repo.refresh_feature_store_clips();
-        clip_repo.refresh_feature_store_users();
-
-        services::AuthService  auth_service(user_repo, jwt_secret, jwt_exp);
-        services::CacheService cache_service(redis_host, redis_port);
-        services::ClipService  clip_service(clip_repo, user_repo, cache_service);
-
-        services::TwitchService twitch_service(
-            env("TWITCH_CLIENT_ID"), env("TWITCH_CLIENT_SECRET"), &cache_service);
-        twitch_service.authenticate();
-
-        auto threads = std::max(1u, std::thread::hardware_concurrency());
-        boost::asio::io_context ioc(static_cast<int>(threads));
-
+        repositories::AdsRepository ads_repo(db_pool);
+        services::CacheService cache_service(env("REDIS_HOST", "127.0.0.1"),
+                                             static_cast<uint16_t>(number("REDIS_PORT", 6379, 65535)));
+        services::ClipService clip_service(clip_repo, user_repo, cache_service);
+        services::TwitchService twitch_service(env("TWITCH_CLIENT_ID"), env("TWITCH_CLIENT_SECRET"),
+                                               &cache_service);
+        services::AuthService auth_service(user_repo, jwt_secret, number("JWT_EXPIRATION_HOURS", 24, 168));
+        auth_service.bind_twitch(twitch_service, cache_service);
+        twitch_service.set_user_token_refresh_handler(
+            [&](const std::string &token) { return auth_service.resolve_user_token(token); });
+        boost::asio::io_context ioc;
         services::SyncService sync_service(twitch_service, clip_repo, db_pool, ioc, &cache_service);
-        sync_service.seed_games();
-        std::thread([&sync_service] {
-            try {
-                sync_service.run_startup_sync();
-            } catch (...) {}
-        }).detach();
-        const int sync_every = clip_sync_interval_minutes();
-        std::cout << "[Main] Twitch clip sync interval: " << sync_every << " min (CLIP_SYNC_INTERVAL_MINUTES)\n";
-        sync_service.start_periodic(sync_every);
-
-        auto eventsub_broadcasters = split_csv(env("TWITCH_EVENTSUB_BROADCASTER_IDS", ""));
-        services::EventSubService eventsub_service(twitch_service, cache_service, auth_service, eventsub_broadcasters);
-        if (!eventsub_broadcasters.empty()) {
-            eventsub_service.start();
-            std::cout << "[Main] EventSub started for " << eventsub_broadcasters.size() << " broadcasters\n";
-        } else {
-            std::cout << "[Main] EventSub disabled: TWITCH_EVENTSUB_BROADCASTER_IDS is empty\n";
+        std::vector<std::string> broadcasters;
+        std::istringstream ids(env("TWITCH_EVENTSUB_BROADCASTER_IDS"));
+        std::string id;
+        while (std::getline(ids, id, ','))
+            if (!id.empty())
+                broadcasters.push_back(id);
+        std::function<std::string()> eventsub_token;
+        if (!env("TWITCH_EVENTSUB_USER_ID").empty())
+            eventsub_token = [&] {
+                return auth_service.resolve_user_token_by_twitch_id(env("TWITCH_EVENTSUB_USER_ID"));
+            };
+        services::EventSubService eventsub_service(twitch_service, cache_service, auth_service, broadcasters,
+                                                   eventsub_token);
+        boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
+        signals.async_wait([&](const auto &error, int) {
+            if (!error)
+                ioc.stop();
+        });
+        if (role == "worker") {
+            auth_service.start_validation();
+            if (!env("TWITCH_CLIENT_ID").empty() && !env("TWITCH_CLIENT_SECRET").empty()) {
+                sync_service.seed_games();
+                sync_service.start_periodic(number("CLIP_SYNC_INTERVAL_MINUTES", 5, 120));
+                if (!broadcasters.empty())
+                    eventsub_service.start();
+            }
+            std::cout << "[Worker] Started\n";
+            ioc.run();
+            eventsub_service.stop();
+            sync_service.stop();
+            auth_service.stop_validation();
+            return 0;
         }
-
         server::Router router;
+        router.use([&](server::Request &req, server::Response &response) {
+            if (req.path.starts_with("/health") || req.path == "/config")
+                return true;
+            if (security_repo.is_ip_banned(req.client_address)) {
+                response = {403, {{"error", "IP address is restricted"}}};
+                return false;
+            }
+            return true;
+        });
         router.use(middleware::make_auth_middleware(auth_service));
-
-        controllers::AuthController    auth_ctrl(auth_service, twitch_service, cache_service, redirect_uri);
-        controllers::ClipController    clip_ctrl(clip_service, twitch_service, auth_service);
-        controllers::ModerationController moderation_ctrl(auth_service, user_repo);
-        controllers::CommentController comment_ctrl(comment_repo, auth_service, clip_repo, user_repo, notif_repo);
+        // Mutation quotas live in Redis and apply across API replicas.
+        router.use([&](server::Request &req, server::Response &response) {
+            if (req.method == server::http::verb::get && req.path != "/ads/serve")
+                return true;
+            const auto key =
+                "api:mutations:" + (req.user_id ? std::to_string(req.user_id) : req.client_address);
+            if (!cache_service.acquire_rate_slot(key, 120, 60)) {
+                response = {429, {{"error", "Too many requests"}, {"retry_after", 60}}};
+                return false;
+            }
+            return true;
+        });
+        controllers::AuthController auth_ctrl(auth_service, twitch_service, cache_service,
+                                              env("TWITCH_REDIRECT_URI", "http://localhost/auth/callback"),
+                                              security_repo);
+        controllers::ClipController clip_ctrl(clip_service, twitch_service, auth_service);
+        controllers::ModerationController moderation_ctrl(security_repo, cache_service);
+        controllers::CommentController comment_ctrl(comment_repo, auth_service, clip_repo, user_repo,
+                                                    notif_repo);
         controllers::EventSubController eventsub_ctrl(eventsub_service);
-        controllers::StaffController    staff_ctrl(auth_service, cache_service, clip_repo);
-        controllers::AdminController    admin_ctrl(auth_service, user_repo, clip_repo);
-        controllers::SocialController   social_ctrl(auth_service, clip_service, twitch_service, user_repo, notif_repo);
+        controllers::StaffController staff_ctrl(auth_service, cache_service, clip_repo);
+        controllers::AdminController admin_ctrl(auth_service, user_repo, clip_repo);
+        controllers::AdsController ads_ctrl(auth_service, ads_repo, jwt_secret);
+        controllers::SocialController social_ctrl(auth_service, clip_service, twitch_service, user_repo,
+                                                  notif_repo, profile_repo);
+        controllers::ProfileController profile_ctrl(profile_repo, user_repo, twitch_service, clip_service);
         controllers::NotificationController notif_ctrl(notif_repo);
-
         auth_ctrl.register_routes(router);
         clip_ctrl.register_routes(router);
         social_ctrl.register_routes(router);
+        profile_ctrl.register_routes(router);
         comment_ctrl.register_routes(router);
         notif_ctrl.register_routes(router);
         eventsub_ctrl.register_routes(router);
         staff_ctrl.register_routes(router);
         admin_ctrl.register_routes(router);
+        ads_ctrl.register_routes(router);
         moderation_ctrl.register_routes(router);
-
-        router.get("/health", [](const server::Request&) -> server::Response {
-            return {200, {{"status", "ok"}}};
+        router.get("/config", [](const server::Request &) -> server::Response {
+            return {200, utils::runtime_config()};
         });
-
-        server::HttpServer srv(ioc, server_port, router);
-        srv.start();
-
-        std::vector<std::thread> workers;
-        workers.reserve(threads - 1);
-        for (unsigned i = 1; i < threads; ++i)
-            workers.emplace_back([&ioc] { ioc.run(); });
-
-        std::cout << "[Main] ClipStream backend started with " << threads << " threads\n";
+        router.get("/health/live",
+                   [](const server::Request &) -> server::Response { return {200, {{"status", "alive"}}}; });
+        auto ready = [&](const server::Request &) -> server::Response {
+            bool okay = database::schema_ready(db_pool) && cache_service.ping_redis();
+            return {okay ? 200u : 503u, {{"status", okay ? "ready" : "unavailable"}}};
+        };
+        router.get("/health", ready);
+        router.get("/health/ready", ready);
+        server::BlockingExecutor executor(number("HTTP_WORKERS", 8, 64),
+                                          number("HTTP_QUEUE_CAPACITY", 64, 1024));
+        server::HttpServer server(ioc, static_cast<uint16_t>(number("BACKEND_PORT", 8080, 65535)), router,
+                                  executor);
+        server.start();
+        std::cout << "[API] Ready\n";
         ioc.run();
-
-        for (auto& t : workers) t.join();
-
-    } catch (const std::exception& e) {
-        std::cerr << "[Fatal] " << e.what() << "\n";
+        server.stop();
+        executor.stop();
+        executor.join();
+        return 0;
+    } catch (const std::exception &error) {
+        std::cerr << "[Fatal] " << error.what() << "\n";
         return 1;
     }
 }

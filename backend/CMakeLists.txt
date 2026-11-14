@@ -1,42 +1,58 @@
 cmake_minimum_required(VERSION 3.20)
 project(clipstream_backend LANGUAGES CXX)
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
+set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Boost 1.74 REQUIRED COMPONENTS system)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(nlohmann_json REQUIRED)
-
+find_path(MYSQL_INCLUDE_DIR mysql/mysql.h REQUIRED)
+find_library(MYSQL_LIBRARY NAMES mysqlclient mariadb REQUIRED)
+find_path(REDIS_INCLUDE_DIR sw/redis++/redis++.h REQUIRED)
+find_library(REDIS_LIBRARY NAMES redis++ REQUIRED)
+find_library(HIREDIS_LIBRARY NAMES hiredis REQUIRED)
+find_library(HIREDIS_SSL_LIBRARY NAMES hiredis_ssl REQUIRED)
 include(FetchContent)
-
-# jwt-cpp
 set(JWT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(JWT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(jwt-cpp
-    GIT_REPOSITORY https://github.com/Thalhammer/jwt-cpp.git
-    GIT_TAG        v0.7.0
-)
+FetchContent_Declare(jwt-cpp GIT_REPOSITORY https://github.com/Thalhammer/jwt-cpp.git GIT_TAG 08bcf77a687fb06e34138e9e9fa12a4ecbe12332)
 FetchContent_MakeAvailable(jwt-cpp)
-
-file(GLOB_RECURSE SOURCES src/*.cpp)
-
-add_executable(${PROJECT_NAME} ${SOURCES})
-
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    /usr/include/mysql
-)
-
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    Boost::system
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    Threads::Threads
-    nlohmann_json::nlohmann_json
-    jwt-cpp::jwt-cpp
-    mysqlclient
-    hiredis
-    redis++
-)
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.cpp)
+list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
+add_library(clipstream_core OBJECT ${SOURCES})
+target_include_directories(clipstream_core PUBLIC include ${MYSQL_INCLUDE_DIR} ${REDIS_INCLUDE_DIR})
+target_link_libraries(clipstream_core PUBLIC Boost::system OpenSSL::SSL OpenSSL::Crypto Threads::Threads nlohmann_json::nlohmann_json jwt-cpp::jwt-cpp ${MYSQL_LIBRARY} ${REDIS_LIBRARY} ${HIREDIS_SSL_LIBRARY} ${HIREDIS_LIBRARY})
+if(MSVC)
+ target_compile_options(clipstream_core PRIVATE /W4)
+else()
+ target_compile_options(clipstream_core PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+add_executable(clipstream_backend src/main.cpp)
+target_link_libraries(clipstream_backend PRIVATE clipstream_core)
+include(CTest)
+if(BUILD_TESTING)
+ add_executable(core_contract_tests tests/core_contracts.cpp)
+ target_link_libraries(core_contract_tests PRIVATE clipstream_core)
+ add_test(NAME core_contracts COMMAND core_contract_tests)
+ add_executable(database_contract_tests tests/database_contracts.cpp)
+ target_link_libraries(database_contract_tests PRIVATE clipstream_core)
+ add_test(NAME database_contracts COMMAND database_contract_tests)
+ set_tests_properties(database_contracts PROPERTIES SKIP_RETURN_CODE 77)
+ add_executable(ads_contract_tests tests/ads_contracts.cpp)
+ target_link_libraries(ads_contract_tests PRIVATE clipstream_core)
+ add_test(NAME ads_contracts COMMAND ads_contract_tests)
+ add_executable(profile_contract_tests tests/profile_contracts.cpp)
+ target_link_libraries(profile_contract_tests PRIVATE clipstream_core)
+ add_test(NAME profile_contracts COMMAND profile_contract_tests)
+ set_tests_properties(profile_contracts PROPERTIES SKIP_RETURN_CODE 77)
+ add_executable(redis_contract_tests tests/redis_contracts.cpp)
+ target_link_libraries(redis_contract_tests PRIVATE clipstream_core)
+ add_test(NAME redis_contracts COMMAND redis_contract_tests)
+ set_tests_properties(redis_contracts PROPERTIES SKIP_RETURN_CODE 77)
+ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/twitch_contracts.cpp")
+  add_executable(twitch_contract_tests tests/twitch_contracts.cpp)
+  target_link_libraries(twitch_contract_tests PRIVATE clipstream_core)
+  add_test(NAME twitch_contracts COMMAND twitch_contract_tests)
+ endif()
+endif()

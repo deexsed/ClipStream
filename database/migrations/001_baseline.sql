@@ -1,13 +1,11 @@
-CREATE DATABASE IF NOT EXISTS clipstream
-    CHARACTER SET utf8mb4
-    COLLATE utf8mb4_unicode_ci;
 
-USE clipstream;
+
+
 
 -- ============================================================
 -- Пользователи
 -- ============================================================
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     username      VARCHAR(64)  NOT NULL UNIQUE,
     email         VARCHAR(255) NOT NULL UNIQUE,
@@ -30,7 +28,7 @@ CREATE TABLE users (
 -- ============================================================
 -- Игры
 -- ============================================================
-CREATE TABLE games (
+CREATE TABLE IF NOT EXISTS games (
     id         BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     twitch_id  VARCHAR(64) NOT NULL UNIQUE,
     name       VARCHAR(255) NOT NULL,
@@ -41,7 +39,7 @@ CREATE TABLE games (
 -- ============================================================
 -- Клипы
 -- ============================================================
-CREATE TABLE clips (
+CREATE TABLE IF NOT EXISTS clips (
     id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     twitch_clip_id  VARCHAR(128) NOT NULL UNIQUE,
     title           VARCHAR(512) NOT NULL,
@@ -73,12 +71,12 @@ CREATE TABLE clips (
 -- ============================================================
 -- Теги
 -- ============================================================
-CREATE TABLE tags (
+CREATE TABLE IF NOT EXISTS tags (
     id   BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(64) NOT NULL UNIQUE
 ) ENGINE=InnoDB;
 
-CREATE TABLE clip_tags (
+CREATE TABLE IF NOT EXISTS clip_tags (
     clip_id BIGINT UNSIGNED NOT NULL,
     tag_id  BIGINT UNSIGNED NOT NULL,
     PRIMARY KEY (clip_id, tag_id),
@@ -89,7 +87,7 @@ CREATE TABLE clip_tags (
 -- ============================================================
 -- Лайки / дизлайки
 -- ============================================================
-CREATE TABLE likes (
+CREATE TABLE IF NOT EXISTS likes (
     user_id  BIGINT UNSIGNED NOT NULL,
     clip_id  BIGINT UNSIGNED NOT NULL,
     is_like  BOOLEAN NOT NULL,
@@ -102,7 +100,7 @@ CREATE TABLE likes (
 -- ============================================================
 -- Комментарии (древовидные)
 -- ============================================================
-CREATE TABLE comments (
+CREATE TABLE IF NOT EXISTS comments (
     id         BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     clip_id    BIGINT UNSIGNED NOT NULL,
     user_id    BIGINT UNSIGNED NOT NULL,
@@ -122,7 +120,7 @@ CREATE TABLE comments (
 -- ============================================================
 -- Подписки
 -- ============================================================
-CREATE TABLE subscriptions (
+CREATE TABLE IF NOT EXISTS subscriptions (
     follower_id  BIGINT UNSIGNED NOT NULL,
     followed_id  BIGINT UNSIGNED NOT NULL,
     created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -134,7 +132,7 @@ CREATE TABLE subscriptions (
 -- ============================================================
 -- История просмотров
 -- ============================================================
-CREATE TABLE view_history (
+CREATE TABLE IF NOT EXISTS view_history (
     id        BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id   BIGINT UNSIGNED NOT NULL,
     clip_id   BIGINT UNSIGNED NOT NULL,
@@ -148,7 +146,7 @@ CREATE TABLE view_history (
 -- ============================================================
 -- Кэш рассчитанных рекомендаций стримеров
 -- ============================================================
-CREATE TABLE user_recommendations (
+CREATE TABLE IF NOT EXISTS user_recommendations (
     user_id BIGINT UNSIGNED PRIMARY KEY,
     recommended_broadcasters_json JSON DEFAULT NULL,
     calculated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -158,7 +156,7 @@ CREATE TABLE user_recommendations (
 -- ============================================================
 -- Сигналы просмотра и негативная персонализация (лента)
 -- ============================================================
-CREATE TABLE user_clip_engagement (
+CREATE TABLE IF NOT EXISTS user_clip_engagement (
     user_id BIGINT UNSIGNED NOT NULL,
     clip_id BIGINT UNSIGNED NOT NULL,
     watch_time_sec INT UNSIGNED NOT NULL DEFAULT 0,
@@ -172,7 +170,7 @@ CREATE TABLE user_clip_engagement (
     CONSTRAINT fk_uce_clip FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE user_feed_blocks (
+CREATE TABLE IF NOT EXISTS user_feed_blocks (
     user_id BIGINT UNSIGNED NOT NULL,
     target_key VARCHAR(160) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -183,7 +181,7 @@ CREATE TABLE user_feed_blocks (
 -- ============================================================
 -- Витрина признаков (feature store) для ранжирования и офлайн-аналитики
 -- ============================================================
-CREATE TABLE feature_store_clip (
+CREATE TABLE IF NOT EXISTS feature_store_clip (
     clip_id BIGINT UNSIGNED PRIMARY KEY,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     age_hours FLOAT NOT NULL DEFAULT 0,
@@ -193,7 +191,7 @@ CREATE TABLE feature_store_clip (
     CONSTRAINT fk_fsc_clip FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE feature_store_user (
+CREATE TABLE IF NOT EXISTS feature_store_user (
     user_id BIGINT UNSIGNED PRIMARY KEY,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     top_games_json JSON NULL,
@@ -206,7 +204,7 @@ CREATE TABLE feature_store_user (
 -- ============================================================
 -- Продуктовая аналитика (сессии, события, DAU-подобные срезы)
 -- ============================================================
-CREATE TABLE analytics_sessions (
+CREATE TABLE IF NOT EXISTS analytics_sessions (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT UNSIGNED NOT NULL,
     session_id VARCHAR(64) NOT NULL,
@@ -219,7 +217,7 @@ CREATE TABLE analytics_sessions (
     CONSTRAINT fk_as_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE analytics_feed_events (
+CREATE TABLE IF NOT EXISTS analytics_feed_events (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT UNSIGNED NOT NULL,
     session_id VARCHAR(64) DEFAULT NULL,
@@ -233,7 +231,7 @@ CREATE TABLE analytics_feed_events (
     CONSTRAINT fk_afe_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE analytics_user_daily (
+CREATE TABLE IF NOT EXISTS analytics_user_daily (
     user_id BIGINT UNSIGNED NOT NULL,
     activity_date DATE NOT NULL,
     watch_sec INT UNSIGNED NOT NULL DEFAULT 0,
@@ -245,7 +243,7 @@ CREATE TABLE analytics_user_daily (
 -- ============================================================
 -- Настройки приложения (runtime config)
 -- ============================================================
-CREATE TABLE app_settings (
+CREATE TABLE IF NOT EXISTS app_settings (
     setting_key VARCHAR(128) PRIMARY KEY,
     setting_value TEXT NOT NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -254,7 +252,7 @@ CREATE TABLE app_settings (
 -- ============================================================
 -- Рекламные баннеры
 -- ============================================================
-CREATE TABLE ads (
+CREATE TABLE IF NOT EXISTS ads (
     id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     title       VARCHAR(255) NOT NULL,
     image_url   VARCHAR(512) DEFAULT NULL,

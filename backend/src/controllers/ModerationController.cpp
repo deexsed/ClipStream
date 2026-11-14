@@ -1,72 +1,109 @@
 #include "controllers/ModerationController.hpp"
-#include "models/User.hpp"
-
+#include "services/CacheService.hpp"
+#include <algorithm>
 namespace clipstream::controllers {
-
 namespace {
-
-server::Response unauthorized() { return {401, {{"error", "Unauthorized"}}}; }
-
-server::Response forbidden() { return {403, {{"error", "Moderator access required"}}}; }
-
-bool is_mod(models::UserRole r) {
-    return r == models::UserRole::Moderator || r == models::UserRole::Admin;
+uint32_t page(const server::Request &req, const char *key, uint32_t fallback) {
+    auto it = req.query.find(key);
+    return it == req.query.end() ? fallback : static_cast<uint32_t>(std::stoul(it->second));
 }
-
+unsigned hours(const nlohmann::json &body, unsigned fallback) {
+    if (body.contains("hours")) {
+        if (!body["hours"].is_number_unsigned())
+            throw std::invalid_argument("hours must be a positive integer");
+        auto value = body["hours"].get<uint64_t>();
+        if (value > 8760)
+            throw std::invalid_argument("Maximum duration is 8760 hours");
+        return static_cast<unsigned>(value);
+    }
+    if (body.contains("days")) {
+        if (!body["days"].is_number_unsigned())
+            throw std::invalid_argument("days must be a positive integer");
+        auto value = body["days"].get<uint64_t>();
+        if (value > 365)
+            throw std::invalid_argument("Maximum duration is 365 days");
+        return static_cast<unsigned>(value * 24);
+    }
+    return fallback;
+}
 } // namespace
-
-ModerationController::ModerationController(services::AuthService& auth, repositories::UserRepository& users)
-    : auth_(auth), users_(users) {}
-
-void ModerationController::register_routes(server::Router& router) {
-    router.post("/moderation/users/:id/restriction", [this](const server::Request& r) { return handle_restriction(r); });
+ModerationController::ModerationController(repositories::AccountSecurityRepository &security,
+                                           services::CacheService &cache)
+    : security_(security), cache_(cache) {}
+void ModerationController::register_routes(server::Router &router) {
+    router.post("/moderation/reports/:id/resolve", [this](const server::Request &req) -> server::Response {
+        if (!req.user_id)
+            return {401, {{"error", "Unauthorized"}}};
+        security_.resolve_report(req.user_id, std::stoull(req.params.at("id")),
+                                 req.body.at("resolution").get<std::string>(),
+                                 req.body.value("reason", std::string{}));
+        return {200, {{"ok", true}}};
+    });
+    router.post("/moderation/clips/:id/visibility", [this](const server::Request &req) -> server::Response {
+        if (!req.user_id)
+            return {401, {{"error", "Unauthorized"}}};
+        auto id = std::stoull(req.params.at("id"));
+        security_.set_clip_visibility(req.user_id, id, req.body.at("hidden").get<bool>(),
+                                      req.body.value("reason", std::string{}));
+        cache_.del("clip:" + std::to_string(id));
+        cache_.invalidate_pattern("clips:*");
+        return {200, {{"ok", true}}};
+    });
+    router.post("/moderation/users/:id/restriction",
+                [this](const auto &req) { return handle_restriction(req); });
+    router.get("/moderation/users/:id", [this](const server::Request &req) -> server::Response {
+        if (!req.user_id)
+            return {401, {{"error", "Unauthorized"}}};
+        return {200, security_.user_state(req.user_id, std::stoull(req.params.at("id")))};
+    });
+    router.get("/moderation/ip-bans", [this](const server::Request &req) -> server::Response {
+        if (!req.user_id)
+            return {401, {{"error", "Unauthorized"}}};
+        auto limit = page(req, "limit", 30), offset = page(req, "offset", 0);
+        auto rows = security_.ip_bans(req.user_id, limit, offset);
+        return {200, {{"bans", rows}, {"has_more", rows.size() == limit}}};
+    });
+    router.post("/moderation/ip-bans", [this](const server::Request &req) -> server::Response {
+        if (!req.user_id)
+            return {401, {{"error", "Unauthorized"}}};
+        auto id = security_.ban_ip(req.user_id, req.body.at("ip").get<std::string>(), hours(req.body, 0),
+                                   req.body.value("reason", std::string{}), req.client_address);
+        return {201, {{"id", id}, {"ok", true}}};
+    });
+    router.del("/moderation/ip-bans/:id", [this](const server::Request &req) -> server::Response {
+        if (!req.user_id)
+            return {401, {{"error", "Unauthorized"}}};
+        security_.unban_ip(req.user_id, std::stoull(req.params.at("id")));
+        return {200, {{"ok", true}}};
+    });
+    router.get("/moderation/audit", [this](const server::Request &req) -> server::Response {
+        if (!req.user_id)
+            return {401, {{"error", "Unauthorized"}}};
+        auto limit = page(req, "limit", 30), offset = page(req, "offset", 0);
+        auto rows = security_.audit(req.user_id, limit, offset);
+        return {200, {{"events", rows}, {"has_more", rows.size() == limit}}};
+    });
+    router.post("/moderation/clips/:id/classification",
+                [this](const server::Request &req) -> server::Response {
+                    if (!req.user_id)
+                        return {401, {{"error", "Unauthorized"}}};
+                    security_.classify_clip(req.user_id, std::stoull(req.params.at("id")),
+                                            req.body.at("is_mature").get<bool>(),
+                                            req.body.value("reason", std::string{}));
+                    cache_.invalidate_pattern("clips:*");
+                    cache_.del("clip:" + req.params.at("id"));
+                    return {200, {{"ok", true}}};
+                });
 }
-
-server::Response ModerationController::handle_restriction(const server::Request& req) {
-    if (req.user_id == 0) return unauthorized();
-    auto actor = auth_.get_user(req.user_id);
-    if (!actor || !is_mod(actor->role)) return forbidden();
-
-    if (!req.body.contains("action") || !req.body["action"].is_string())
-        return {400, {{"error", "Missing string field 'action'"}}};
-
-    uint64_t target_id = 0;
-    try {
-        target_id = std::stoull(req.params.at("id"));
-    } catch (...) {
-        return {400, {{"error", "Invalid user id"}}};
-    }
-
-    const std::string action = req.body["action"].get<std::string>();
-    std::string       reason;
-    if (req.body.contains("reason") && req.body["reason"].is_string()) reason = req.body["reason"].get<std::string>();
-
-    if (action == "lift_chat") {
-        if (!users_.clear_chat_ban(target_id)) return {500, {{"error", "Failed"}}};
-        return {200, {{"ok", true}}};
-    }
-    if (action == "block_account") {
-        if (target_id == req.user_id) return {400, {{"error", "Cannot block yourself"}}};
-        if (!users_.set_account_blocked(target_id, true)) return {500, {{"error", "Failed"}}};
-        return {200, {{"ok", true}}};
-    }
-    if (action == "unblock_account") {
-        if (!users_.set_account_blocked(target_id, false)) return {500, {{"error", "Failed"}}};
-        return {200, {{"ok", true}}};
-    }
-    if (action == "chat_ban") {
-        if (target_id == req.user_id) return {400, {{"error", "Cannot restrict yourself"}}};
-        bool     permanent = req.body.contains("permanent") && req.body["permanent"].is_boolean()
-                           && req.body["permanent"].get<bool>();
-        uint32_t days      = 7;
-        if (req.body.contains("days") && req.body["days"].is_number_unsigned())
-            days = req.body["days"].get<uint32_t>();
-        if (!users_.apply_chat_ban(target_id, permanent, days, reason, req.user_id))
-            return {500, {{"error", "Failed"}}};
-        return {200, {{"ok", true}}};
-    }
-
-    return {400, {{"error", "Unknown action"}}};
+server::Response ModerationController::handle_restriction(const server::Request &req) {
+    if (!req.user_id)
+        return {401, {{"error", "Unauthorized"}}};
+    auto action = req.body.at("action").get<std::string>();
+    auto duration = hours(req.body, action == "suspend_account" ? 24 : 168);
+    if (action == "chat_ban" && req.body.value("permanent", false))
+        duration = 0;
+    security_.restrict_user(req.user_id, std::stoull(req.params.at("id")), action, duration,
+                            req.body.value("reason", std::string{}));
+    return {200, {{"ok", true}}};
 }
-
 } // namespace clipstream::controllers

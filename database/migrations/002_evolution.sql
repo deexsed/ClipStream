@@ -1,0 +1,107 @@
+-- Reconciles existing and fresh databases. ADD statements are checked against information_schema.
+ALTER TABLE clips ADD COLUMN vod_id VARCHAR(64) DEFAULT NULL;
+
+ALTER TABLE clips ADD COLUMN vod_offset INT DEFAULT 0;
+
+ALTER TABLE clips ADD COLUMN twitch_created_at VARCHAR(64) DEFAULT NULL;
+
+ALTER TABLE clips ADD COLUMN broadcaster_avatar VARCHAR(255) DEFAULT '';
+
+ALTER TABLE clips ADD COLUMN broadcaster_id VARCHAR(64) DEFAULT '';
+
+ALTER TABLE users ADD COLUMN twitch_access_token TEXT NULL;
+
+ALTER TABLE users ADD COLUMN twitch_refresh_token TEXT NULL;
+
+ALTER TABLE users ADD COLUMN twitch_token_expires_at VARCHAR(64) NULL;
+
+CREATE TABLE IF NOT EXISTS user_recommendations (user_id BIGINT UNSIGNED PRIMARY KEY,recommended_broadcasters_json JSON NULL,calculated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,CONSTRAINT fk_user_reco_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE);
+
+CREATE TABLE IF NOT EXISTS app_settings (setting_key VARCHAR(128) PRIMARY KEY,setting_value TEXT NOT NULL,updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);
+
+ALTER TABLE clips ADD COLUMN title_fingerprint VARCHAR(16) NOT NULL DEFAULT '' AFTER title;
+
+CREATE TABLE IF NOT EXISTS user_clip_engagement (user_id BIGINT UNSIGNED NOT NULL,clip_id BIGINT UNSIGNED NOT NULL,watch_time_sec INT UNSIGNED NOT NULL DEFAULT 0,max_position_sec INT UNSIGNED NOT NULL DEFAULT 0,completion_ratio FLOAT NOT NULL DEFAULT 0,early_skip TINYINT(1) NOT NULL DEFAULT 0,replay_count INT UNSIGNED NOT NULL DEFAULT 0,updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,PRIMARY KEY (user_id, clip_id),CONSTRAINT fk_uce_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,CONSTRAINT fk_uce_clip FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_feed_blocks (user_id BIGINT UNSIGNED NOT NULL,target_key VARCHAR(160) NOT NULL,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (user_id, target_key),CONSTRAINT fk_ufb_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS feature_store_clip (clip_id BIGINT UNSIGNED PRIMARY KEY,updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,age_hours FLOAT NOT NULL DEFAULT 0,velocity_score FLOAT NOT NULL DEFAULT 0,er_like FLOAT NOT NULL DEFAULT 0,freshness_decay FLOAT NOT NULL DEFAULT 0,CONSTRAINT fk_fsc_clip FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS feature_store_user (user_id BIGINT UNSIGNED PRIMARY KEY,updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,top_games_json JSON NULL,affinity_entropy FLOAT NULL,watch_sec_7d INT UNSIGNED NOT NULL DEFAULT 0,clips_viewed_7d INT UNSIGNED NOT NULL DEFAULT 0,CONSTRAINT fk_fsu_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS analytics_sessions (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id BIGINT UNSIGNED NOT NULL,session_id VARCHAR(64) NOT NULL,started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,total_watch_sec INT UNSIGNED NOT NULL DEFAULT 0,clips_viewed INT UNSIGNED NOT NULL DEFAULT 0,UNIQUE KEY uq_analytics_session (user_id, session_id),INDEX idx_analytics_sess_user (user_id, last_seen_at),CONSTRAINT fk_as_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS analytics_feed_events (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id BIGINT UNSIGNED NOT NULL,session_id VARCHAR(64) DEFAULT NULL,event_type ENUM('watch_heartbeat','watch_session_end','home_impression') NOT NULL,block_type VARCHAR(32) NOT NULL DEFAULT '',clip_id BIGINT UNSIGNED DEFAULT NULL,value DOUBLE NULL,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,INDEX idx_afe_user_time (user_id, created_at),INDEX idx_afe_event (event_type, created_at),CONSTRAINT fk_afe_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS analytics_user_daily (user_id BIGINT UNSIGNED NOT NULL,activity_date DATE NOT NULL,watch_sec INT UNSIGNED NOT NULL DEFAULT 0,clips_viewed INT UNSIGNED NOT NULL DEFAULT 0,PRIMARY KEY (user_id, activity_date),CONSTRAINT fk_aud_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+ALTER TABLE users ADD COLUMN account_blocked TINYINT(1) NOT NULL DEFAULT 0;
+
+ALTER TABLE users ADD COLUMN chat_banned_until TIMESTAMP NULL DEFAULT NULL;
+
+ALTER TABLE users ADD COLUMN chat_ban_reason VARCHAR(512) NULL;
+
+ALTER TABLE users ADD COLUMN chat_banned_by BIGINT UNSIGNED NULL;
+
+ALTER TABLE users ADD COLUMN legal_consent_at VARCHAR(64) NULL DEFAULT NULL;
+
+ALTER TABLE users ADD COLUMN legal_consent_version VARCHAR(32) NULL DEFAULT NULL;
+
+ALTER TABLE users MODIFY COLUMN `role` ENUM('user','moderator','admin','vip') NOT NULL DEFAULT 'user';
+
+CREATE TABLE IF NOT EXISTS user_badge_history (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id BIGINT UNSIGNED NOT NULL,badge VARCHAR(32) NOT NULL,event_type ENUM('granted','revoked') NOT NULL DEFAULT 'granted',created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,INDEX idx_ubh_user (user_id, created_at DESC),CONSTRAINT fk_ubh_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS content_reports (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,reporter_id BIGINT UNSIGNED NOT NULL,target_type ENUM('clip','comment','user') NOT NULL,target_id BIGINT UNSIGNED NOT NULL,reason VARCHAR(512) NOT NULL DEFAULT '',status ENUM('open','reviewed','dismissed') NOT NULL DEFAULT 'open',created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,INDEX idx_cr_open (status, created_at DESC),CONSTRAINT fk_cr_reporter FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_settings (user_id BIGINT UNSIGNED PRIMARY KEY,hide_mature TINYINT(1) NOT NULL DEFAULT 1,mute_keywords JSON NULL,clip_languages JSON NULL,CONSTRAINT fk_us_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS clip_promotions (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,clip_id BIGINT UNSIGNED NOT NULL,boost_score DOUBLE NOT NULL DEFAULT 40,placement VARCHAR(24) NOT NULL DEFAULT 'all',label VARCHAR(64) NOT NULL DEFAULT '',starts_at TIMESTAMP NULL DEFAULT NULL,ends_at TIMESTAMP NULL DEFAULT NULL,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,INDEX idx_cp_clip (clip_id),INDEX idx_cp_place (placement),CONSTRAINT fk_cp_clip FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS compliance_log (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,action VARCHAR(64) NOT NULL,clip_id BIGINT UNSIGNED NULL,actor_user_id BIGINT UNSIGNED NULL,details_json JSON NULL,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,INDEX idx_cl_clip (clip_id),INDEX idx_cl_time (created_at DESC)) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS comment_votes (user_id BIGINT UNSIGNED NOT NULL,comment_id BIGINT UNSIGNED NOT NULL,vote TINYINT NOT NULL,PRIMARY KEY (user_id, comment_id),INDEX idx_cv_comment (comment_id),CONSTRAINT fk_cv_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,CONSTRAINT fk_cv_comment FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS notifications (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id BIGINT UNSIGNED NOT NULL,type VARCHAR(32) NOT NULL,actor_id BIGINT UNSIGNED NOT NULL,payload JSON NULL,read_at TIMESTAMP NULL DEFAULT NULL,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,INDEX idx_notif_user_time (user_id, created_at DESC),INDEX idx_notif_user_unread (user_id, read_at),CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,CONSTRAINT fk_notif_actor FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS friendships (user_id BIGINT UNSIGNED NOT NULL,friend_id BIGINT UNSIGNED NOT NULL,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (user_id, friend_id),INDEX idx_friends_friend (friend_id),CONSTRAINT fk_friends_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,CONSTRAINT fk_friends_peer FOREIGN KEY (friend_id) REFERENCES users(id) ON DELETE CASCADE,CONSTRAINT chk_friends_ne CHECK (user_id <> friend_id)) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS friend_requests (requester_id BIGINT UNSIGNED NOT NULL,addressee_id BIGINT UNSIGNED NOT NULL,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (requester_id, addressee_id),INDEX idx_fr_addressee (addressee_id),CONSTRAINT fk_fr_req FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,CONSTRAINT fk_fr_add FOREIGN KEY (addressee_id) REFERENCES users(id) ON DELETE CASCADE,CONSTRAINT chk_fr_ne CHECK (requester_id <> addressee_id)) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_achievements (user_id BIGINT UNSIGNED NOT NULL,achievement_key VARCHAR(64) NOT NULL,earned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (user_id, achievement_key),INDEX idx_ua_time (user_id, earned_at DESC),CONSTRAINT fk_ua_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS profile_wall_posts (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,profile_owner_id BIGINT UNSIGNED NOT NULL,author_id BIGINT UNSIGNED NOT NULL,body TEXT NOT NULL,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,INDEX idx_wall_owner (profile_owner_id, created_at DESC),CONSTRAINT fk_wall_owner FOREIGN KEY (profile_owner_id) REFERENCES users(id) ON DELETE CASCADE,CONSTRAINT fk_wall_author FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS profile_wall_mentions (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,post_id BIGINT UNSIGNED NOT NULL,mention_kind ENUM('user','clip') NOT NULL,mentioned_user_id BIGINT UNSIGNED NULL,mentioned_clip_id BIGINT UNSIGNED NULL,INDEX idx_wm_post (post_id),CONSTRAINT fk_wm_post FOREIGN KEY (post_id) REFERENCES profile_wall_posts(id) ON DELETE CASCADE,CONSTRAINT fk_wm_user FOREIGN KEY (mentioned_user_id) REFERENCES users(id) ON DELETE CASCADE,CONSTRAINT fk_wm_clip FOREIGN KEY (mentioned_clip_id) REFERENCES clips(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+ALTER TABLE clips ADD COLUMN is_mature TINYINT(1) NOT NULL DEFAULT 0;
+
+ALTER TABLE clips ADD COLUMN unavailable_at TIMESTAMP NULL DEFAULT NULL;
+
+ALTER TABLE clips ADD COLUMN removed_reason VARCHAR(64) NULL DEFAULT NULL;
+
+ALTER TABLE clips ADD COLUMN broadcaster_lang VARCHAR(16) NOT NULL DEFAULT '';
+
+ALTER TABLE user_settings ADD COLUMN clip_languages JSON NULL;
+
+ALTER TABLE clips ADD COLUMN twitch_created_ts DATETIME GENERATED ALWAYS AS (STR_TO_DATE(NULLIF(TRIM(twitch_created_at),''), '%Y-%m-%dT%H:%i:%sZ')) STORED;
+
+ALTER TABLE clips ADD INDEX idx_clips_feed_ts (twitch_created_ts, view_count);
+
+ALTER TABLE view_history ADD INDEX idx_vh_user_clip (user_id, clip_id);
+
+ALTER TABLE clips ADD COLUMN clip_creator_twitch_id VARCHAR(64) NOT NULL DEFAULT '';
+
+ALTER TABLE clips ADD COLUMN clip_creator_login VARCHAR(128) NOT NULL DEFAULT '';
+
+ALTER TABLE clips ADD INDEX idx_clips_creator_tid (clip_creator_twitch_id);
+-- Журнал compliance (DMCA, удаления, недоступность)
+CREATE TABLE IF NOT EXISTS compliance_log (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    action VARCHAR(64) NOT NULL,
+    clip_id BIGINT UNSIGNED NULL,
+    actor_user_id BIGINT UNSIGNED NULL,
+    details_json JSON NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_cl_clip (clip_id),
+    INDEX idx_cl_time (created_at DESC)
+) ENGINE=InnoDB;
