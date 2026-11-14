@@ -935,6 +935,7 @@ select {
 }
 .watch-topline {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 15px;
   align-items: center;
@@ -949,6 +950,7 @@ select {
 }
 .watch-navigation {
   display: flex;
+  margin-left: auto;
   gap: 8px;
 }
 .watch-layout {

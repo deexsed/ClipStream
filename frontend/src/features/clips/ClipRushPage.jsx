@@ -84,7 +84,7 @@ function RushFeed({ languageKey, sort }) {
   const [dialog, setDialog] = useState(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [compact, setCompact] = useState(
-    () => window.matchMedia("(max-width: 1000px)").matches,
+    () => window.matchMedia("(max-width: 1023px)").matches,
   );
   const commentsPanel = useRef(null);
   const sheetDrag = useRef(null);
@@ -97,9 +97,11 @@ function RushFeed({ languageKey, sort }) {
     if (finish && drag && drag.distance > 80) closeComments();
   };
   useEffect(() => {
-    const media = window.matchMedia("(max-width: 1000px)");
+    // Below 1024px, docking comments leaves less than Twitch's 400px minimum.
+    const media = window.matchMedia("(max-width: 1023px)");
     const change = () => setCompact(media.matches);
     media.addEventListener?.("change", change);
+    change();
     return () => media.removeEventListener?.("change", change);
   }, []);
   useEffect(() => {
