@@ -184,86 +184,90 @@ export default function ProfilePage({ source = "user" }) {
                     </button>
                   ))}
                 </nav>
-                {tab === "overview" && (
-                  <>
-                    <div className="profile-stats">
-                      {[
-                        ["followers", "Подписчиков"],
-                        ["following", "Отслеживает"],
-                        ["friends", "Друзей"],
-                        ["clips", "Клипов"],
-                      ]
-                        .filter(([key]) => profile.stats?.[key] != null)
-                        .map(([key, label]) => (
-                          <div key={key}>
-                            <strong>{number(profile.stats[key])}</strong>
-                            <span>{label}</span>
-                          </div>
-                        ))}
-                    </div>
-                    {twitch?.is_live && (
-                      <section className="surface channel-status">
-                        <span className="live-badge">Прямой эфир</span>
-                        <h2>{twitch.stream?.title || twitch.channel?.title}</h2>
-                        <p className="muted">
-                          {twitch.stream?.game_name ||
-                            twitch.channel?.game_name}
-                          {twitch.stream?.viewer_count != null &&
-                            ` · ${number(twitch.stream.viewer_count)} зрителей`}
-                        </p>
+                <div className="tab-content" key={tab}>
+                  {tab === "overview" && (
+                    <>
+                      <div className="profile-stats">
+                        {[
+                          ["followers", "Подписчиков"],
+                          ["following", "Отслеживает"],
+                          ["friends", "Друзей"],
+                          ["clips", "Клипов"],
+                        ]
+                          .filter(([key]) => profile.stats?.[key] != null)
+                          .map(([key, label]) => (
+                            <div key={key}>
+                              <strong>{number(profile.stats[key])}</strong>
+                              <span>{label}</span>
+                            </div>
+                          ))}
+                      </div>
+                      {twitch?.is_live && (
+                        <section className="surface channel-status">
+                          <span className="live-badge">Прямой эфир</span>
+                          <h2>
+                            {twitch.stream?.title || twitch.channel?.title}
+                          </h2>
+                          <p className="muted">
+                            {twitch.stream?.game_name ||
+                              twitch.channel?.game_name}
+                            {twitch.stream?.viewer_count != null &&
+                              ` · ${number(twitch.stream.viewer_count)} зрителей`}
+                          </p>
+                          <a
+                            className="text-link"
+                            href={`https://www.twitch.tv/${encodeURIComponent(twitch.login)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Смотреть эфир <ArrowUpRight size={15} />
+                          </a>
+                        </section>
+                      )}
+                      {profile.about?.website && (
                         <a
                           className="text-link"
-                          href={`https://www.twitch.tv/${encodeURIComponent(twitch.login)}`}
+                          href={profile.about.website}
                           target="_blank"
-                          rel="noopener noreferrer"
+                          rel="noopener noreferrer ugc"
                         >
-                          Смотреть эфир <ArrowUpRight size={15} />
+                          Сайт автора <ArrowUpRight size={14} />
                         </a>
-                      </section>
-                    )}
-                    {profile.about?.website && (
-                      <a
-                        className="text-link"
-                        href={profile.about.website}
-                        target="_blank"
-                        rel="noopener noreferrer ugc"
-                      >
-                        Сайт автора <ArrowUpRight size={14} />
-                      </a>
-                    )}
-                    <UnifiedClips profile={profile} />
-                  </>
-                )}
-                {tab === "clips" && <UnifiedClips profile={profile} />}
-                {tab === "wall" && local && (
-                  <Wall
-                    username={local.username}
-                    self={self}
-                    canWrite={profile.capabilities?.can_write_wall}
-                  />
-                )}
-                {tab === "friends" && local && (
-                  <Friends userId={local.id} self={self} />
-                )}
-                {["followers", "following"].includes(tab) && (
-                  <ProfileList
-                    key={tab}
-                    path={`/profiles/${profile.key}/${tab}`}
-                    title={
-                      tab === "followers"
-                        ? "Подписчики в ClipStream"
-                        : "Отслеживает в ClipStream"
-                    }
-                  />
-                )}
-                {tab === "activity" && self && <Activity userId={local.id} />}
-                {tab === "friends_feed" && self && <ProfileClips friends />}
-                {tab === "settings" && self && (
-                  <>
-                    <ProfileSettings />
-                    <Settings />
-                  </>
-                )}
+                      )}
+                      <UnifiedClips profile={profile} />
+                    </>
+                  )}
+                  {tab === "clips" && <UnifiedClips profile={profile} />}
+                  {tab === "wall" && local && (
+                    <Wall
+                      username={local.username}
+                      self={self}
+                      canWrite={profile.capabilities?.can_write_wall}
+                    />
+                  )}
+                  {tab === "friends" && local && (
+                    <Friends userId={local.id} self={self} />
+                  )}
+                  {["followers", "following"].includes(tab) && (
+                    <ProfileList
+                      key={tab}
+                      path={`/profiles/${profile.key}/${tab}`}
+                      title={
+                        tab === "followers"
+                          ? "Подписчики в ClipStream"
+                          : "Отслеживает в ClipStream"
+                      }
+                    />
+                  )}
+                  {tab === "activity" && self && <Activity userId={local.id} />}
+                  {tab === "friends_feed" && self && <ProfileClips friends />}
+                  {tab === "settings" && self && (
+                    <>
+                      <ProfileSettings />
+                      <Settings />
+                    </>
+                  )}
+                </div>
               </>
             )}
           </>

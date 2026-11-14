@@ -1,4 +1,5 @@
 import React, { StrictMode, useState } from "react";
+import { webcrypto } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, Outlet } from "react-router-dom";
@@ -117,6 +118,7 @@ describe("session and accessible UI", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
   it("offers only Twitch OAuth and requires consent", () => {
+    vi.spyOn(globalThis, "crypto", "get").mockReturnValue(webcrypto);
     render(
       <Wrapper>
         <LoginDialog

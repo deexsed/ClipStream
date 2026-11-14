@@ -178,8 +178,8 @@ select {
   line-height: 1.4;
   transition:
     transform 140ms var(--ease),
-    background-color 140ms,
-    color 140ms;
+    background-color var(--motion-color),
+    color var(--motion-color);
   white-space: nowrap;
 }
 .button-primary {
@@ -197,7 +197,7 @@ select {
   border-radius: 9px;
   color: var(--theme-text, #c7c7d0);
   transition:
-    background-color 140ms,
+    background-color var(--motion-color),
     transform 140ms;
 }
 .button-row,
@@ -322,19 +322,25 @@ select {
   background: var(--accent);
 }
 .app-shell {
+  --header-height: 76px;
   display: grid;
-  grid-template-columns: 224px minmax(0, 1fr);
-  grid-template-rows: 76px minmax(0, 1fr);
+  --sidebar-expanded-width: 224px;
+  --sidebar-width: var(--sidebar-expanded-width);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-rows: var(--header-height) minmax(0, 1fr);
   height: 100dvh;
   overflow: hidden;
 }
 .app-header {
+  --header-padding: 28px;
+  --header-side: 200px;
+  --header-gap: 24px;
   grid-column: 1/-1;
   display: grid;
-  grid-template-columns: 200px minmax(180px, 550px) 1fr;
+  grid-template-columns: 1fr min(620px, calc(100% - 2 * (var(--header-side) + var(--header-gap)))) 1fr;
   align-items: center;
-  gap: 24px;
-  padding: 0 28px;
+  gap: var(--header-gap);
+  padding: 0 var(--header-padding);
   border-bottom: 1px solid var(--theme-line, #28282e);
   background: var(--theme-panel, #151518);
   z-index: 10;
@@ -348,17 +354,103 @@ select {
   letter-spacing: -0.07em;
 }
 .brand-mark {
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--theme-control-line, #6c6385);
-  color: var(--accent);
-  border-radius: 9px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.header-brand {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
+  margin-inline-start: calc(16px - var(--header-padding));
 }
-.brand-dot {
-  color: var(--accent);
+.header-brand > .icon-button {
+  flex: none;
+}
+.header-brand .sidebar-toggle {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--theme-text, #e6e6eb);
+}
+.sidebar-content {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  min-height: 100%;
+  touch-action: pan-y;
+}
+.sidebar-details {
+  display: grid;
+  grid-template-rows: 1fr;
+  flex: 1 0 auto;
+  opacity: 1;
+  visibility: visible;
+}
+.sidebar-details-content {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  min-height: 0;
+  overflow: hidden;
+}
+.app-shell.sidebar-compact {
+  --sidebar-width: 76px;
+}
+.sidebar-compact .sidebar {
+  padding: 12px 4px;
+}
+.sidebar-compact .sidebar-details {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.sidebar-swipe-edge {
+  position: fixed;
+  left: 0;
+  top: 70px;
+  bottom: calc(70px + env(safe-area-inset-bottom));
+  width: 20px;
+  z-index: 11;
+  touch-action: pan-y;
+}
+.dialog.sidebar-drawer {
+  margin: 0;
+  padding: 0 16px 20px;
+  width: min(300px, 85vw);
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+  border-width: 0 1px 0 0;
+  background: var(--theme-panel, #151518);
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.dialog.sidebar-drawer::-webkit-scrollbar {
+  display: none;
+}
+.sidebar-drawer > .dialog-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 -16px 14px;
+  padding: 20px 16px 14px;
+  background: var(--theme-panel, #151518);
+  border-bottom: 1px solid var(--theme-line, #28282e);
+}
+.dialog.sidebar-drawer[open] {
+  animation: sidebar-in 180ms var(--ease);
+}
+@keyframes sidebar-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+.sidebar-drawer .sidebar-content {
+  min-height: calc(100dvh - 100px);
 }
 .header-search {
   display: flex;
@@ -421,6 +513,8 @@ select {
   background: var(--theme-panel, #151518);
   border-right: 1px solid var(--theme-line, #28282e);
   overflow: auto;
+  scrollbar-width: none;
+  min-width: 0;
   gap: 26px;
 }
 .side-navigation,
@@ -490,6 +584,89 @@ select {
   min-width: 0;
   overscroll-behavior-y: contain;
   scrollbar-gutter: stable;
+}
+@media (min-width: 1001px) {
+  .app-shell {
+    transition: grid-template-columns var(--motion-panel-enter) var(--ease);
+  }
+  .sidebar {
+    overflow-x: hidden;
+    transition: padding var(--motion-panel-enter) var(--ease);
+  }
+  .sidebar-details {
+    transition:
+      grid-template-rows var(--motion-panel-enter) var(--ease),
+      opacity 180ms ease,
+      visibility 0s;
+  }
+  .sidebar-details-content {
+    width: calc(var(--sidebar-expanded-width) - 33px);
+  }
+  .sidebar-compact .sidebar-details {
+    transition:
+      grid-template-rows var(--motion-panel-enter) var(--ease),
+      opacity var(--motion-color) ease,
+      visibility 0s var(--motion-panel-enter);
+  }
+  .sidebar .side-navigation > a {
+    position: relative;
+    display: block;
+    flex: none;
+    height: 44px;
+    padding: 0;
+  }
+  .app-shell .sidebar .side-navigation > a {
+    transition:
+      height var(--motion-panel-enter) var(--ease),
+      scale var(--interaction-return) var(--interaction-ease),
+      background-color var(--motion-color),
+      color var(--motion-color),
+      opacity var(--motion-color);
+  }
+  .sidebar .side-navigation > a > svg {
+    position: absolute;
+    left: 13px;
+    top: 12px;
+    width: 19px;
+    height: 19px;
+    transition:
+      left var(--motion-panel-enter) var(--ease),
+      top var(--motion-panel-enter) var(--ease),
+      width var(--motion-panel-enter) var(--ease),
+      height var(--motion-panel-enter) var(--ease);
+  }
+  .sidebar .side-navigation > a > span {
+    position: absolute;
+    left: 44px;
+    top: 12px;
+    line-height: 20px;
+    font-weight: 500;
+    white-space: nowrap;
+    transform: translateX(0);
+    transition:
+      left var(--motion-panel-enter) var(--ease),
+      top var(--motion-panel-enter) var(--ease),
+      transform var(--motion-panel-enter) var(--ease),
+      font-size var(--motion-panel-enter) var(--ease),
+      line-height var(--motion-panel-enter) var(--ease);
+  }
+  .sidebar-compact .side-navigation > a {
+    height: 76px;
+    border-radius: 10px;
+  }
+  .sidebar-compact .side-navigation > a > svg {
+    left: calc(50% - 11px);
+    top: 14px;
+    width: 22px;
+    height: 22px;
+  }
+  .sidebar-compact .side-navigation > a > span {
+    left: 50%;
+    top: 43px;
+    transform: translateX(-50%);
+    font-size: 10px;
+    line-height: 13px;
+  }
 }
 .page {
   max-width: 1600px;
@@ -611,7 +788,7 @@ select {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 180ms var(--ease);
+  transition: transform var(--motion-control) var(--ease);
 }
 .thumbnail-fallback {
   width: 100%;
@@ -640,7 +817,7 @@ select {
   align-items: center;
   background: #0002;
   opacity: 0;
-  transition: opacity 160ms;
+  transition: opacity var(--motion-control);
 }
 .play-affordance svg {
   padding: 12px;
@@ -902,6 +1079,57 @@ select {
   margin-left: auto;
   color: var(--theme-muted, #8f8e9d);
   font-size: 0.67rem;
+}
+.notifications-panel {
+  position: fixed;
+  z-index: 20;
+  top: var(--header-height);
+  right: 0;
+  bottom: 0;
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--theme-panel, #19191e);
+  border-left: 1px solid var(--theme-line, #33313c);
+  box-shadow: -12px 0 32px #0004;
+  animation: notifications-in 180ms var(--ease);
+}
+.notifications-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--theme-line, #33313c);
+}
+:root[data-input="keyboard"] .notifications-panel {
+  animation: none;
+}
+.notifications-heading h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.notifications-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+  overflow-wrap: anywhere;
+}
+@keyframes notifications-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notifications-panel {
+    animation: none;
+  }
 }
 .notification-list {
   display: flex;
@@ -1394,12 +1622,12 @@ td .button {
 }
 @media (max-width: 1200px) {
   .app-shell {
-    grid-template-columns: 200px minmax(0, 1fr);
+    --sidebar-expanded-width: 200px;
   }
   .app-header {
-    grid-template-columns: 176px minmax(160px, 1fr) auto;
-    gap: 20px;
-    padding: 0 22px;
+    --header-padding: 22px;
+    --header-gap: 20px;
+    padding: 0 var(--header-padding);
   }
   .page {
     padding: 32px 26px 50px;
@@ -1420,16 +1648,17 @@ td .button {
 }
 @media (max-width: 1000px) {
   .app-shell {
+    --header-height: 70px;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 70px minmax(0, 1fr) auto;
+    grid-template-rows: var(--header-height) minmax(0, 1fr) auto;
   }
   .sidebar {
     display: none;
   }
   .app-header {
-    grid-template-columns: 170px minmax(150px, 1fr) auto;
-    padding: 0 24px;
-    gap: 22px;
+    --header-padding: 24px;
+    --header-gap: 22px;
+    padding: 0 var(--header-padding);
   }
   .main-content {
     grid-column: 1;
@@ -1489,12 +1718,18 @@ td .button {
     font-size: 87.5%;
   }
   .app-shell {
-    grid-template-rows: 66px minmax(0, 1fr) auto;
+    --header-height: 66px;
+    grid-template-rows: var(--header-height) minmax(0, 1fr) auto;
   }
   .app-header {
-    grid-template-columns: 30px minmax(70px, 1fr) auto;
-    gap: 12px;
-    padding: 0 15px;
+    --header-padding: 8px;
+    --header-side: 120px;
+    --header-gap: 6px;
+    padding: 0 var(--header-padding);
+  }
+  .header-brand {
+    margin-inline-start: 0;
+    gap: 8px;
   }
   .wordmark > span:last-child {
     display: none;
@@ -1792,7 +2027,7 @@ td .button {
 }
 @media (max-width: 360px) {
   .app-header {
-    gap: 8px;
+    --header-gap: 8px;
     padding: 0 10px;
   }
   .header-search > svg {
@@ -2164,7 +2399,7 @@ h3 {
   padding: 28px 18px calc(20px + env(safe-area-inset-bottom));
   overflow-y: auto;
   transform: translateY(var(--sheet-drag, 0px));
-  transition: transform 160ms var(--ease);
+  transition: transform var(--motion-control) var(--ease);
 }
 .rush-comments-sheet[open] {
   animation: none;

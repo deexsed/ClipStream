@@ -106,16 +106,18 @@ export default function ConsolePage({ admin = false }) {
               </button>
             ))}
           </nav>
-          {tab === "overview" && <Overview admin={admin} />}
-          {tab === "system" && <System />}
-          {tab === "users" && <UserManagement />}
-          {tab === "promotions" && <Promotions />}
-          {tab === "ads" && <AdsManager />}
-          {["moderation", "reports", "ip", "audit"].includes(tab) && (
-            <ModerationManager
-              section={tab === "moderation" ? "accounts" : tab}
-            />
-          )}
+          <div className="tab-content" key={tab}>
+            {tab === "overview" && <Overview admin={admin} />}
+            {tab === "system" && <System />}
+            {tab === "users" && <UserManagement />}
+            {tab === "promotions" && <Promotions />}
+            {tab === "ads" && <AdsManager />}
+            {["moderation", "reports", "ip", "audit"].includes(tab) && (
+              <ModerationManager
+                section={tab === "moderation" ? "accounts" : tab}
+              />
+            )}
+          </div>
         </>
       )}
     </div>

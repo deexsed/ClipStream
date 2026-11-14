@@ -1,6 +1,8 @@
-import { Component, useEffect, useRef } from "react";
+import { Component, useLayoutEffect, useRef, useState } from "react";
 import { AlertCircle, ArrowRight, Loader2, Play, X } from "lucide-react";
 import { Link } from "react-router-dom";
+import { motionSettings } from "./Reveal";
+import { rememberDialogFocus, restoreDialogFocus } from "./dialogFocus";
 
 export function Button({
   children,
@@ -16,8 +18,12 @@ export function Button({
       {...props}
       disabled={props.disabled || busy}
     >
-      {busy && <Loader2 size={16} className="spinner" />}
-      {children}
+      {busy && (
+        <span className="button-busy-indicator" aria-hidden="true">
+          <Loader2 size={16} className="spinner" />
+        </span>
+      )}
+      <span className="button-content">{children}</span>
     </button>
   );
 }
@@ -102,21 +108,98 @@ export function Avatar({ user, size = "", ...props }) {
 }
 
 // Native dialog owns focus containment, inert background, Escape and focus return.
-export function Dialog({ open, onClose, title, children, className = "" }) {
+export function Dialog({
+  open,
+  onClose,
+  onAfterClose,
+  title,
+  children,
+  className = "",
+}) {
   const ref = useRef(null);
-  const previous = useRef(null);
+  const [present, setPresent] = useState(open);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const afterCloseRef = useRef(onAfterClose);
+  afterCloseRef.current = onAfterClose;
   const openRef = useRef(open);
   openRef.current = open;
-  useEffect(() => {
+  const requestClose = () => {
+    if (openRef.current) closeRef.current();
+  };
+  const animation = useRef(null);
+  const closeNotified = useRef(true);
+  // Keep conditionally rendered contents intact throughout the exit.
+  const retained = useRef(children);
+  if (open) retained.current = children;
+  useLayoutEffect(() => {
     const dialog = ref.current;
+    const interrupted = animation.current;
+    const current = interrupted ? getComputedStyle(dialog) : null;
+    const from = current && {
+      opacity: current.opacity,
+      transform: current.transform,
+    };
+    interrupted?.cancel();
+    animation.current = null;
     if (open && !dialog.open) {
-      previous.current = document.activeElement;
+      rememberDialogFocus(dialog, () => openRef.current);
+      closeNotified.current = false;
       dialog.showModal();
     }
-    if (!open && dialog.open) dialog.close();
+    if (open) setPresent(true);
+    if (!dialog.open) return;
+    dialog.dataset.state = open ? "open" : "closing";
+    const style = getComputedStyle(dialog);
+    const settings = motionSettings(dialog, open, "dialog");
+    if (settings.instant) {
+      if (!open) {
+        dialog.style.removeProperty("transform");
+        dialog.close();
+        setPresent(false);
+      }
+      return;
+    }
+    const hidden = {
+      opacity: 0,
+      transform:
+        style.getPropertyValue("--dialog-hidden-transform").trim() ||
+        "translateY(8px) scale(0.96)",
+    };
+    // A dragged sheet exits from the finger's last position, without snapping
+    // back to its resting position first.
+    const shown = { opacity: 1, transform: style.transform };
+    const motion = dialog.animate(
+      [
+        from || (open ? hidden : shown),
+        open ? { opacity: 1, transform: "none" } : hidden,
+      ],
+      settings,
+    );
+    animation.current = motion;
+    motion.finished.then(
+      () => {
+        if (animation.current !== motion) return;
+        animation.current = null;
+        if (!openRef.current) {
+          dialog.style.removeProperty("transform");
+          dialog.close();
+          setPresent(false);
+        }
+      },
+      () => {},
+    );
   }, [open]);
+  useLayoutEffect(() => {
+    const dialog = ref.current;
+    return () => {
+      const current = animation.current;
+      animation.current = null;
+      current?.cancel();
+      if (dialog.open) dialog.close();
+      restoreDialogFocus(dialog);
+    };
+  }, []);
   return (
     <dialog
       ref={ref}
@@ -124,22 +207,26 @@ export function Dialog({ open, onClose, title, children, className = "" }) {
       aria-label={title}
       onCancel={(event) => {
         event.preventDefault();
-        closeRef.current();
+        requestClose();
       }}
       onClose={() => {
-        if (!openRef.current) previous.current?.focus?.();
+        if (!openRef.current && !ref.current.open && !closeNotified.current) {
+          closeNotified.current = true;
+          restoreDialogFocus(ref.current);
+          afterCloseRef.current?.();
+        }
       }}
       onClick={(event) => {
-        if (event.target === ref.current) closeRef.current();
+        if (event.target === ref.current) requestClose();
       }}
     >
       <div className="dialog-heading">
         <h2>{title}</h2>
-        <IconButton label="Закрыть" onClick={onClose}>
+        <IconButton label="Закрыть" onClick={requestClose}>
           <X size={20} />
         </IconButton>
       </div>
-      {children}
+      {(open || present) && (open ? children : retained.current)}
     </dialog>
   );
 }

@@ -49,13 +49,15 @@ export default function FollowingPage() {
               </button>
             ))}
           </nav>
-          {tab === "feed" ? (
-            <FollowingFeed />
-          ) : tab === "profiles" ? (
-            <ProfileList />
-          ) : (
-            <TwitchFollowing />
-          )}
+          <div className="tab-content" key={tab}>
+            {tab === "feed" ? (
+              <FollowingFeed />
+            ) : tab === "profiles" ? (
+              <ProfileList />
+            ) : (
+              <TwitchFollowing />
+            )}
+          </div>
         </>
       )}
     </div>

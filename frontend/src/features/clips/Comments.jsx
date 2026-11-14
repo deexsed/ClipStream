@@ -1,6 +1,7 @@
 import Select from "../../shared/ui/Select";
+import Reveal from "../../shared/ui/Reveal";
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import { Link, useOutletContext } from "react-router-dom";
+import { Link, useLocation, useOutletContext } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import {
   ArrowUp,
@@ -24,7 +25,14 @@ import { date, relativeTime } from "../../shared/format";
 import { useSession } from "../auth/Session";
 import "./Comments.css";
 
-export default function Comments({ clipId }) {
+export default function Comments({ clipId, anchor = false }) {
+  const section = useRef(null);
+  const { hash } = useLocation();
+  useLayoutEffect(() => {
+    if (!anchor || hash !== "#comments") return;
+    section.current?.scrollIntoView({ block: "start", behavior: "instant" });
+    section.current?.focus({ preventScroll: true });
+  }, [clipId, hash, anchor]);
   const [sort, setSort] = useState("recent");
   const [reply, setReply] = useState(null);
   const [text, setText] = useState("");
@@ -68,7 +76,13 @@ export default function Comments({ clipId }) {
     },
   });
   return (
-    <section className="comments">
+    <section
+      className={`comments ${anchor && hash === "#comments" ? "comments-target" : ""}`}
+      id={anchor ? "comments" : undefined}
+      ref={section}
+      tabIndex={-1}
+      aria-label="Обсуждение клипа"
+    >
       <div className="comments-toolbar">
         <h2>
           <MessageCircle size={18} /> Обсуждение
@@ -92,21 +106,23 @@ export default function Comments({ clipId }) {
         >
           <Avatar user={session.user} />
           <div className="composer-main">
-            {reply && (
-              <div className="composer-reply">
-                <CornerDownRight size={14} />
-                <span>
-                  Ответ <strong>@{reply.author_name}</strong>
-                </span>
-                <IconButton
-                  type="button"
-                  label="Отменить ответ"
-                  onClick={() => setReply(null)}
-                >
-                  <X size={14} />
-                </IconButton>
-              </div>
-            )}
+            <Reveal open={Boolean(reply)}>
+              {reply && (
+                <div className="composer-reply">
+                  <CornerDownRight size={14} />
+                  <span>
+                    Ответ <strong>@{reply.author_name}</strong>
+                  </span>
+                  <IconButton
+                    type="button"
+                    label="Отменить ответ"
+                    onClick={() => setReply(null)}
+                  >
+                    <X size={14} />
+                  </IconButton>
+                </div>
+              )}
+            </Reveal>
             <label className="sr-only" htmlFor={inputId}>
               Ваш комментарий
             </label>
@@ -131,7 +147,7 @@ export default function Comments({ clipId }) {
               maxLength={4000}
               placeholder={reply ? "Написать ответ…" : "Добавить комментарий…"}
             />
-            {composing && (
+            <Reveal open={composing}>
               <div className="composer-controls">
                 <span className="composer-count">
                   {text.length > 3500 ? `${text.length}/4000` : ""}
@@ -156,7 +172,7 @@ export default function Comments({ clipId }) {
                   <ArrowUp size={16} /> Отправить
                 </Button>
               </div>
-            )}
+            </Reveal>
             {submit.error && <Status error={submit.error} />}
           </div>
         </form>
@@ -168,7 +184,7 @@ export default function Comments({ clipId }) {
         </div>
       )}
       {sent && (
-        <span className="sr-only" role="status">
+        <span className="feedback composer-feedback" role="status">
           Комментарий отправлен
         </span>
       )}
@@ -276,7 +292,7 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
             <span className="comment-edited">изменено</span>
           )}
         </div>
-        {editing ? (
+        <Reveal open={editing}>
           <form
             className="form-stack comment-editor"
             onSubmit={(event) => {
@@ -299,9 +315,8 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
               </Button>
             </div>
           </form>
-        ) : (
-          <p className="comment-body">{comment.body}</p>
-        )}
+        </Reveal>
+        {!editing && <p className="comment-body">{comment.body}</p>}
         <div className="comment-actions">
           <button
             aria-label="Полезный комментарий"
@@ -338,7 +353,7 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
             <button onClick={() => setConfirmDelete(true)}>Удалить</button>
           )}
         </div>
-        {confirmDelete && (
+        <Reveal open={confirmDelete}>
           <div className="confirmation" role="alert">
             Удалить комментарий и ответы?
             <Button
@@ -349,7 +364,7 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
             </Button>
             <Button onClick={() => setConfirmDelete(false)}>Отмена</Button>
           </div>
-        )}
+        </Reveal>
         {change.error && <Status error={change.error} />}
         {(expanded
           ? pageItems(children, "comments")

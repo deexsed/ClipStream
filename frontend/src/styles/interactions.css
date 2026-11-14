@@ -1,9 +1,205 @@
 /* Shared by every route and portal. Individual scale preserves positioning
    transforms; CSS retargets an interrupted press from its current value. */
 :root {
-  --interaction-return: 180ms;
-  --interaction-press: 70ms;
-  --interaction-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-control: 160ms;
+  --motion-color: 140ms;
+  --motion-popover-enter: 180ms;
+  --motion-disclosure-enter: 180ms;
+  --motion-disclosure-exit: 140ms;
+  --motion-panel-enter: 250ms;
+  --motion-panel-exit: 180ms;
+  --motion-drawer-enter: 300ms;
+  --motion-drawer-exit: 200ms;
+  --interaction-return: var(--motion-control);
+  --interaction-press: 100ms;
+  --interaction-ease: var(--ease);
+  --motion-dialog-enter: var(--motion-panel-enter);
+  --motion-dialog-exit: var(--motion-panel-exit);
+}
+
+/* Native dialog still owns focus, Escape and inertness. WAAPI keeps both
+   directions interruptible, while the backdrop follows the same lifecycle. */
+.dialog,
+.dialog[open],
+.dialog.sidebar-drawer[open],
+.dialog.rush-comments-sheet[open] {
+  animation: none;
+}
+.dialog {
+  --dialog-hidden-transform: translateY(8px) scale(0.96);
+}
+.dialog.sidebar-drawer {
+  --dialog-hidden-transform: translateX(-100%);
+  --motion-dialog-enter: var(--motion-drawer-enter);
+  --motion-dialog-exit: var(--motion-drawer-exit);
+}
+.dialog.rush-comments-sheet {
+  --dialog-hidden-transform: translateY(100%);
+  --motion-dialog-enter: var(--motion-drawer-enter);
+  --motion-dialog-exit: var(--motion-drawer-exit);
+}
+.dialog::backdrop {
+  opacity: 1;
+  transition: opacity var(--motion-dialog-enter) var(--ease);
+}
+@starting-style {
+  .dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+.dialog[data-state="closing"]::backdrop {
+  opacity: 0;
+  transition-duration: var(--motion-dialog-exit);
+}
+.header-search {
+  transition:
+    border-color var(--motion-color),
+    box-shadow var(--motion-color),
+    background-color var(--motion-color);
+}
+.header-search:focus-within {
+  border-color: var(--theme-control-line, #9280b4);
+  background-color: var(--theme-selected-bg, #201d28);
+  box-shadow: 0 0 0 3px #bba6ef12;
+}
+.language-options label {
+  border-radius: 8px;
+  padding-inline: 6px;
+  transition:
+    background-color var(--motion-color),
+    color var(--motion-color);
+}
+.language-options label:has(input:checked) {
+  background-color: #c8beff12;
+  color: var(--theme-text, #e5d9ff);
+}
+.ui-select-chevron {
+  transition: transform var(--interaction-return) var(--ease);
+}
+.ui-select[data-state="open"] .ui-select-chevron {
+  transform: rotate(180deg);
+}
+.motion-reveal {
+  min-height: 0;
+}
+.motion-reveal[data-motion-state="entering"],
+.motion-reveal[data-motion-state="exiting"] {
+  overflow: hidden;
+}
+.button {
+  position: relative;
+}
+.button-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: inherit;
+}
+.button-busy-indicator {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.button[aria-busy="true"] .button-content {
+  opacity: 0;
+}
+
+/* The video must resize with this docked panel. This bounded, short grid
+   transition is deliberate; panel contents use transform/opacity. */
+.rush-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0px;
+  grid-template-rows: minmax(0, 1fr);
+  transition: grid-template-columns var(--motion-panel-exit) var(--ease);
+}
+.rush-body.has-comments {
+  transition-duration: var(--motion-panel-enter);
+}
+.rush-body > .rush-scroll {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+.rush-comments.motion-reveal {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.rush-comments > .rush-comments-content {
+  width: var(--rush-comments-width);
+  height: 100%;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+}
+.rush-heading,
+.rush-navigation {
+  transition: right var(--motion-panel-enter) var(--ease);
+}
+.tab-content {
+  animation: content-reveal var(--motion-control) var(--ease);
+}
+@keyframes content-reveal {
+  from {
+    opacity: 0;
+  }
+}
+:root[data-input="keyboard"]
+  :is(.tab-content, .rush-body, .rush-heading, .rush-navigation) {
+  animation: none;
+  transition: none;
+}
+/* Only the icon responds to an acknowledged vote; counts remain stationary. */
+:is(.reaction-buttons, .comment-actions, .rush-actions)
+  button[aria-pressed="true"]
+  svg {
+  fill: currentColor;
+  fill-opacity: 0.18;
+}
+.feedback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid #7caa8033;
+  border-radius: 10px;
+  background: #7caa8010;
+}
+.feedback::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+@starting-style {
+  .feedback {
+    opacity: 0;
+  }
+}
+.feedback {
+  transition: opacity 180ms var(--ease);
+}
+
+:root[data-input="keyboard"] .dialog::backdrop {
+  transition: none;
+}
+:root[data-input="keyboard"]
+  :is(
+    .app-shell,
+    .sidebar,
+    .sidebar-details,
+    .sidebar .side-navigation > a,
+    .sidebar .side-navigation > a > svg,
+    .sidebar .side-navigation > a > span
+  ) {
+  transition: none;
+}
+:root[data-input="keyboard"] :is(.ui-select-chevron, .ui-select-content) {
+  transition: none;
+  animation: none;
 }
 :root
   :is(
@@ -21,12 +217,12 @@
   touch-action: manipulation;
   transition:
     scale var(--interaction-return) var(--interaction-ease),
-    background-color 140ms,
-    color 140ms,
-    border-color 140ms,
+    background-color var(--motion-color),
+    color var(--motion-color),
+    border-color var(--motion-color),
     box-shadow var(--interaction-return),
-    outline-color 140ms,
-    opacity 140ms;
+    outline-color var(--motion-color),
+    opacity var(--motion-color);
 }
 :root
   :is(
@@ -144,7 +340,7 @@
   }
   .category-card > div,
   .thumbnail {
-    transition: box-shadow 180ms;
+    transition: box-shadow var(--motion-control);
   }
   :is(.category-card:hover > div, .thumbnail:hover) {
     box-shadow:
@@ -193,6 +389,23 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .tab-content,
+  .rush-body,
+  .rush-heading,
+  .rush-navigation {
+    animation: none;
+    transition: none;
+  }
+  .dialog::backdrop,
+  .header-search,
+  .language-options label,
+  .ui-select-chevron,
+  .feedback {
+    transition: none;
+  }
+  .ui-select-content[data-state="closed"] {
+    animation: none;
+  }
   :root
     :is(
       button,
