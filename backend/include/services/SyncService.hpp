@@ -35,16 +35,16 @@ class SyncService {
     /// Первый прогон после старта: top games + клипы (с Redis-lock, см.
     /// run_startup_sync в main).
     void run_startup_sync();
-    void start_periodic(int interval_minutes = 1);
+    void start_periodic(int interval_minutes = 1, bool poll_twitch = true);
 
   private:
     void sync_clips_all_phases();
-    void recompute_recommendations_periodic();
 
     TwitchService& twitch_;
     repositories::ClipRepository& clip_repo_;
     database::ConnectionPool& db_pool_;
     std::thread worker_;
+    std::thread recommendation_worker_;
     std::atomic<bool> stopping_{false};
     std::atomic<bool> lease_held_{false};
     std::condition_variable wake_;
@@ -53,7 +53,6 @@ class SyncService {
     int retry_delay_seconds_{1};
     std::chrono::steady_clock::time_point history_resume_at_{};
     unsigned polling_turn_{0};
-    std::chrono::steady_clock::time_point last_reco_recompute_{};
     std::mutex sync_mutex_;
     CacheService* cache_{nullptr};
 

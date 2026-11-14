@@ -2,6 +2,7 @@
 
 #include "database/ConnectionPool.hpp"
 #include "models/Clip.hpp"
+#include "models/Recommendation.hpp"
 #include "repositories/IRepository.hpp"
 #include <cstdint>
 #include <nlohmann/json.hpp>
@@ -79,6 +80,21 @@ struct RecommendationWeights {
 class ClipRepository : public IRepository<models::Clip> {
   public:
     explicit ClipRepository(database::ConnectionPool &pool);
+
+    recommendations::Profile recommendation_profile(uint64_t user_id);
+    std::vector<recommendations::Candidate> recommendation_candidates(
+        uint64_t user_id, const FeedMuteSet *mutes, const std::vector<uint64_t> &exclude,
+        const std::vector<uint64_t> &only_ids = {}, bool rush = false);
+    uint64_t refresh_recommendation_features(uint64_t after_id, uint32_t batch_size = 1000,
+                                            const std::vector<uint64_t> &only_ids = {});
+    void refresh_dirty_recommendation_features();
+    void save_recommendation_twitch_follows(uint64_t user_id, const std::vector<std::string> &ids);
+    uint64_t recommendation_catalog_max_id();
+    void refresh_collaborative_predictions(uint64_t user_id);
+    void record_twitch_snapshot(uint64_t clip_id, uint32_t views);
+    void record_recommendation_delivery(const nlohmann::json &rows, uint64_t user_id,
+                                       const std::string &surface, uint32_t offset);
+    void record_recommendation_impressions(uint64_t user_id, const std::vector<std::string> &tokens);
 
     std::optional<models::Clip> find_by_id(uint64_t id) override;
     std::vector<models::Clip> find_all(uint32_t limit, uint32_t offset) override;
@@ -219,6 +235,9 @@ class ClipRepository : public IRepository<models::Clip> {
 
     uint64_t count_clips_for_broadcaster(const std::string &twitch_login, const std::string &twitch_user_id);
     std::vector<nlohmann::json> get_games();
+    std::vector<nlohmann::json> get_viewed_games(uint64_t user_id);
+    void fill_card_counts(const std::vector<models::Clip *> &clips);
+    void fill_user_votes(const std::vector<models::Clip *> &clips, uint64_t user_id);
     bool update_broadcaster_avatar(uint64_t id, const std::string &avatar_url);
     bool update_broadcaster_metadata(uint64_t id, const std::string &broadcaster_id,
                                      const std::string &avatar_url);

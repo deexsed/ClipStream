@@ -1,4 +1,5 @@
 #include "repositories/CommentRepository.hpp"
+#include "repositories/RecommendationWrites.hpp"
 #include "database/SqlEscape.hpp"
 #include "utils/Errors.hpp"
 #include "utils/Utf8.hpp"
@@ -256,6 +257,7 @@ uint64_t CommentRepository::create(const models::Comment &comment) {
             throw std::runtime_error(std::string("Create comment failed: ") + mysql_error(conn.raw()));
 
         const auto id = mysql_insert_id(conn.raw());
+        mark_recommendation_dirty(conn.raw(),comment.user_id,comment.clip_id);
         if (!comment.parent_id)
             reputation(conn.raw(), owner, comment.user_id, 3);
         else {
@@ -335,6 +337,7 @@ bool CommentRepository::remove_authorized(uint64_t id, uint64_t actor) {
             return false;
         if (root)
             reputation(c, owner, author, -3);
+        mark_recommendation_dirty(c,author,clip);
         tx.commit();
         return true;
     });

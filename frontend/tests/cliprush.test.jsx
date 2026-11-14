@@ -1,6 +1,12 @@
 import React from "react";
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  act,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter, Routes, Route, Outlet } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "../src/shared/api/queries";
@@ -71,6 +77,8 @@ it("keeps one autoplay player, preserves it on vote, and supports navigation and
       let data = {};
       if (url.endsWith("/auth/me"))
         data = { user: { id: 1, username: "Viewer", role: 0 } };
+      else if (url.includes("/home-feed?"))
+        data = { items: clips.map((clip) => ({ clip })), next_cursor: null };
       else if (url.includes("/clips?")) data = { clips, has_more: false };
       else if (url.endsWith("/like"))
         data = { like_count: 1, user_vote: "like" };
@@ -153,13 +161,15 @@ it("opens comments in a mobile bottom sheet with native dismissal", async () => 
     async (url) =>
       new Response(
         JSON.stringify(
-          url.includes("/clips?")
-            ? { clips, has_more: false }
-            : url.endsWith("/clips/1")
-              ? clips[0]
-              : url.includes("/comments")
-                ? { comments: [], has_more: false }
-                : { ad: null },
+          url.includes("/home-feed?")
+            ? { items: clips.map((clip) => ({ clip })), next_cursor: null }
+            : url.includes("/clips?")
+              ? { clips, has_more: false }
+              : url.endsWith("/clips/1")
+                ? clips[0]
+                : url.includes("/comments")
+                  ? { comments: [], has_more: false }
+                  : { ad: null },
         ),
       ),
   );
@@ -173,4 +183,101 @@ it("opens comments in a mobile bottom sheet with native dismissal", async () => 
   ).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
   await waitFor(() => expect(sheet.open).toBe(false));
+});
+
+function commentFixtures() {
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async (url) =>
+      new Response(
+        JSON.stringify(
+          url.includes("/home-feed?")
+            ? { items: clips.map((clip) => ({ clip })), next_cursor: null }
+            : url.includes("/clips?")
+              ? { clips, has_more: false }
+              : url.endsWith("/clips/1")
+                ? clips[0]
+                : url.includes("/comments")
+                  ? { comments: [], has_more: false }
+                  : { ad: null },
+        ),
+      ),
+  );
+}
+
+it("focuses docked comments after a mobile sheet has finished closing", async () => {
+  let change;
+  const media = {
+    matches: true,
+    addEventListener: (_, callback) => {
+      change = callback;
+    },
+    removeEventListener() {},
+  };
+  vi.stubGlobal("matchMedia", (query) =>
+    query.includes("1023px") ? media : { matches: false },
+  );
+  commentFixtures();
+  show();
+  await screen.findByRole("heading", { name: "Rush clip 1" });
+  fireEvent.click(screen.getByRole("button", { name: "Обсудить" }));
+  const sheet = await screen.findByRole("dialog", { name: "Комментарии" });
+  screen.getByRole("button", { name: "Закрыть" }).focus();
+  let finish;
+  sheet.animate = vi.fn(() => ({
+    finished: new Promise((resolve) => {
+      finish = resolve;
+    }),
+    cancel: vi.fn(),
+  }));
+  const nativeFocus = HTMLElement.prototype.focus;
+  vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (
+    ...args
+  ) {
+    // Model native modal inertness, which jsdom does not implement.
+    if (sheet.open && !sheet.contains(this)) return;
+    nativeFocus.apply(this, args);
+  });
+  act(() => {
+    media.matches = false;
+    change();
+  });
+  const panel = screen.getByRole("complementary", {
+    name: "Комментарии клипа",
+  });
+  expect(document.activeElement).not.toBe(panel);
+  await act(async () => finish());
+  expect(sheet.open).toBe(false);
+  expect(document.activeElement).toBe(panel);
+});
+
+it("allows dragging again after a sheet closes during pointer capture", async () => {
+  vi.stubGlobal("matchMedia", (query) => ({
+    matches: query.includes("max-width"),
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  commentFixtures();
+  const { container } = show();
+  await screen.findByRole("heading", { name: "Rush clip 1" });
+  const startDrag = (id) => {
+    const sheet = screen.getByRole("dialog", { name: "Комментарии" });
+    sheet.style.transform = "none";
+    sheet.getAnimations = () => [];
+    const event = new Event("pointerdown", { bubbles: true });
+    Object.assign(event, {
+      isPrimary: true,
+      button: 0,
+      clientY: 200,
+      pointerId: id,
+    });
+    fireEvent(container.querySelector(".rush-sheet-grip"), event);
+    expect(sheet.style.transition).toBe("none");
+    return sheet;
+  };
+  fireEvent.click(screen.getByRole("button", { name: "Обсудить" }));
+  const first = startDrag(1);
+  fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
+  expect(first.style.transition).toBe("");
+  fireEvent.click(screen.getByRole("button", { name: "Обсудить" }));
+  startDrag(2);
 });

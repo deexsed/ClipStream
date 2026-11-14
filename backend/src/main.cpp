@@ -116,12 +116,13 @@ int main() {
         });
         if (role == "worker") {
             auth_service.start_validation();
-            if (!env("TWITCH_CLIENT_ID").empty() && !env("TWITCH_CLIENT_SECRET").empty()) {
+            const bool poll_twitch=!env("TWITCH_CLIENT_ID").empty() && !env("TWITCH_CLIENT_SECRET").empty();
+            if (poll_twitch) {
                 sync_service.seed_games();
-                sync_service.start_periodic(number("CLIP_SYNC_INTERVAL_MINUTES", 1, 120));
                 if (!broadcasters.empty())
                     eventsub_service.start();
             }
+            sync_service.start_periodic(number("CLIP_SYNC_INTERVAL_MINUTES", 1, 120),poll_twitch);
             std::cout << "[Worker] Started\n";
             ioc.run();
             eventsub_service.stop();

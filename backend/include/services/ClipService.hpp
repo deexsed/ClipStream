@@ -40,15 +40,16 @@ class ClipService {
                       const std::vector<std::string> &tracked_broadcaster_ids = {},
                       const std::string &session_id = {},
                       const std::optional<std::vector<std::string>> &clip_langs_q = std::nullopt);
-    /// Единая смешанная лента (как YouTube): for_you / trending / fresh, без N+1 по тегам; exclude — уже
-    /// показанные id.
+    /// Bounded, stable recommendation queue; cursor is opaque and scoped to viewer/languages/surface.
     nlohmann::json get_home_feed(uint64_t user_id, uint32_t limit,
-                                 const std::vector<uint64_t> &client_exclude_ids,
+                                 const std::string &cursor,
                                  const std::string &session_id = {},
-                                 const std::optional<std::vector<std::string>> &clip_langs_q = std::nullopt);
+                                 const std::optional<std::vector<std::string>> &clip_langs_q = std::nullopt,
+                                 const std::string &surface = "home");
+    void record_recommendation_impressions(uint64_t user_id, const std::vector<std::string> &tokens);
+    void save_recommendation_twitch_follows(uint64_t user_id, const nlohmann::json &channels);
     nlohmann::json get_analytics_summary_24h();
     nlohmann::json get_similar_streamers(uint64_t user_id, uint32_t limit);
-    void recompute_recommendations_for_active_users(uint32_t days_back = 30, uint32_t max_users = 200);
     std::optional<models::Clip> get_clip(uint64_t id);
     /// JSON карточки клипа + user_vote для зрителя (like / dislike / null). Без кэша — актуальные счётчики.
     std::optional<nlohmann::json> get_clip_json_for_viewer(uint64_t clip_id, uint64_t viewer_user_id);
@@ -74,7 +75,7 @@ class ClipService {
     bool record_clip_feedback(uint64_t clip_id, uint64_t user_id, const std::string &action);
     bool toggle_like(uint64_t clip_id, uint64_t user_id, bool is_like);
     bool report_clip(uint64_t reporter_id, uint64_t clip_id, const std::string &reason);
-    std::vector<nlohmann::json> get_games();
+    std::vector<nlohmann::json> get_games(uint64_t viewer_id = 0);
     uint64_t count_clips_for_broadcaster(const std::string &twitch_login, const std::string &twitch_user_id);
     std::vector<models::Clip>
     get_clips_by_author(uint64_t author_id, uint32_t limit, uint32_t offset, uint64_t viewer_user_id,
@@ -94,14 +95,12 @@ class ClipService {
                                                 const std::vector<uint64_t> &extra_exclude_clip_ids);
 
   private:
-    static std::vector<models::Clip> diversify_feed(std::vector<models::Clip> ranked, uint32_t out_limit);
     std::string cache_key(const repositories::ClipFilter &f, uint32_t limit, uint32_t offset,
                           uint64_t user_id);
 
     repositories::ClipRepository &clip_repo_;
     repositories::UserRepository &user_repo_;
     CacheService &cache_;
-    repositories::RecommendationWeights rec_weights_;
 };
 
 } // namespace clipstream::services

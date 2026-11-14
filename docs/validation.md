@@ -96,3 +96,13 @@ Backend regressions включают конкурентные vote toggles, ог
 Проверено: 43/43 frontend-теста, production Vite build, Docker frontend build, npm audit --omit=dev (0 vulnerabilities). Новые регрессии проверяют FormData и выбор Select, размещение popup внутри dialog, Escape, ответ на комментарий с parent_id, сохранение текста после HTTP 503 и повторную отправку. Во встроенном браузере проверены desktop 1440×900 и mobile 390×844: комментарии справа / нижняя sheet, кастомное меню, смена сортировки и раскрытие composer. Тестовые комментарии в основную БД не публиковались. Проверка desktop выявила гонку между чтением matchMedia и подпиской на change; состояние теперь синхронизируется сразу после подписки.
 
 Лицензии production-пакетов включены в third-party-notices.txt. Для react-remove-scroll-bar 2.3.8, не включившего LICENSE в npm-архив, сохранён неизменённый MIT notice из закреплённой upstream-ревизии; происхождение указано в frontend/licenses/README.md.
+
+
+## Рекомендации и отдельная политика ClipRush — 14.11.2026
+
+- Backend: Release CMake/GCC 11 в Linux Docker, каталог `backend/build/recommendations`; сборка прошла. Все 9 CTest-наборов прошли с отдельными MySQL 8 и Redis, без skipped integration tests.
+- Проверены голоса обоих направлений и их отмена, уникальные открытия, старые/нулевые новые клипы, похожие пользователи, блокировки, очередь и cursor scope, конкурентное создание первой страницы, замена устаревшей очереди, SQL fallback при отказе Redis и worker без Twitch credentials.
+- Frontend: 107 Vitest-тестов в 22 файлах и Vite production build прошли на Windows/Node 24. Проверены реальные видимые показы, фоновые вкладки, сохранение ленты, истечение cursor и явная новая подборка.
+- Чистый scoring/select на синтетических 1700 кандидатах, 200 взаимодействиях и 200 позициях: 9 ms в одном локальном Linux Release-прогоне. Это не latency API, не нагрузочная проверка production БД и не доказательство оптимальности весов.
+- `git diff --check`, clang-format для новых C++ модулей и Prettier для новых frontend модулей прошли.
+- Основная БД не мигрировалась, работающий стек не перезапускался. Перенос проверен в изолированной тестовой схеме; логи находятся в игнорируемом `temp/recommendations`. Живой Twitch, браузерная ручная проверка новой политики и A/B-эффективность не проверялись.

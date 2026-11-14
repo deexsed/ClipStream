@@ -6,6 +6,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
+import useClipVote from "./useClipVote";
 import {
   ArrowDown,
   ArrowLeft,
@@ -74,18 +75,7 @@ export default function ClipPage({ feed = false }) {
       request(`/clips/${clip.id}/view`, { method: "POST" }).catch(() => {});
     }
   }, [clip?.id]);
-  const vote = useMutation({
-    mutationFn: (isLike) =>
-      request(`/clips/${id}/like`, {
-        method: "POST",
-        body: { is_like: isLike },
-      }),
-    onSuccess: (value) =>
-      queryClient.setQueryData(["api", `/clips/${id}`], (previous) => ({
-        ...previous,
-        ...value,
-      })),
-  });
+  const vote = useClipVote(id);
   const react = (isLike) => {
     if (!session.user) openLogin();
     else vote.mutate(isLike);
@@ -296,7 +286,7 @@ export default function ClipPage({ feed = false }) {
                   ))}
                 </nav>
               )}
-              <Comments clipId={clip.id} />
+              <Comments clipId={clip.id} anchor />
             </div>
             <aside className="related">
               <div className="section-label">

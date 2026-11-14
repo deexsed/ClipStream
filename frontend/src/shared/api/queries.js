@@ -42,6 +42,13 @@ export function usePages(path, field, parameters = {}, options = {}) {
         ? undefined
         : last.offset + (last[field] || []).length,
     enabled: Boolean(path),
+    // Keep displayed clips in place; scrolling appends to this snapshot.
+    ...(field === "clips" && {
+      staleTime: Infinity,
+      refetchOnMount: false,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    }),
     ...options,
   });
 }

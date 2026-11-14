@@ -125,6 +125,13 @@ int main() {
         first.is_mature = true;
         first.author_id = b->user.id;
         auto second = clips.create(first);
+        require(clips.get_viewed_games(a->user.id).empty(), "Empty history returned global categories");
+        require(clips.record_user_view(a->user.id, clip), "Could not record category history");
+        auto viewed_games = clips.get_viewed_games(a->user.id);
+        require(viewed_games.size() == 1 && viewed_games.front().at("id") == game_id,
+                "Viewed category missing from personal shortcuts");
+        require(clips.get_viewed_games(b->user.id).empty(), "Category history leaked between viewers");
+        require(clips.get_viewed_games(0).empty(), "Guest received personal category history");
         require(clips.find_by_id(clip).has_value(), "Single-connection find_by_id deadlocked");
         repositories::ClipFilter filter;
         filter.period = repositories::TimePeriod::All;
@@ -163,6 +170,15 @@ int main() {
         comment.user_id = b->user.id;
         comment.body = "root";
         auto parent = comments.create(comment);
+        auto counted_clip = *clips.find_by_id(clip);
+        auto empty_clip = *clips.find_by_id(second);
+        clips.fill_card_counts({&counted_clip, &empty_clip});
+        require(counted_clip.comment_count == 1 && empty_clip.comment_count == 0,
+                "Bulk comment counts mixed clips or omitted zero");
+        require(counted_clip.platform_view_count == 1 && empty_clip.platform_view_count == 0,
+                "Platform views were not counted separately from Twitch views");
+        nlohmann::json counted_json = counted_clip;
+        require(counted_json.at("comment_count") == 1, "Comment count missing from clip JSON");
         comment.clip_id = second;
         comment.parent_id = parent;
         bool rejected = false;
@@ -192,6 +208,20 @@ int main() {
                 "Deep comment continuation unavailable");
         clips.upsert_user_like(b->user.id, clip, true);
         require(clips.find_by_id(clip)->like_count == 1, "Vote count not updated");
+        clips.fill_user_votes({&counted_clip, &empty_clip}, b->user.id);
+        require(counted_clip.user_vote == true && !empty_clip.user_vote.has_value() && counted_clip.like_count == 1,
+                "Batched card votes or current totals missing");
+        clips.fill_user_votes({&counted_clip}, a->user.id);
+        require(!counted_clip.user_vote.has_value(), "Card vote leaked between users");
+        clips.upsert_user_like(b->user.id, clip, false);
+        clips.fill_user_votes({&counted_clip}, b->user.id);
+        require(counted_clip.user_vote == false && counted_clip.like_count == 0 && counted_clip.dislike_count == 1,
+                "Card vote did not switch to dislike");
+        nlohmann::json disliked_json = counted_clip;
+        require(disliked_json.at("user_vote") == "dislike", "Dislike serialized as absent vote");
+        clips.fill_user_votes({&counted_clip}, 0);
+        require(!counted_clip.user_vote.has_value(), "Guest received a user's card vote");
+        clips.upsert_user_like(b->user.id, clip, true);
         clips.upsert_user_like(b->user.id, clip, true);
         require(clips.find_by_id(clip)->like_count == 0, "Vote removal count wrong");
         clips.record_analytics_engagement(b->user.id, "session-" + suffix, clip, false, 10);

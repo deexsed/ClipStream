@@ -85,7 +85,6 @@ SyncService::SyncService(TwitchService& twitch, repositories::ClipRepository& cl
                          database::ConnectionPool& db_pool, boost::asio::io_context& ioc, CacheService* cache)
     : twitch_(twitch), clip_repo_(clip_repo), db_pool_(db_pool), cache_(cache) {
     (void)ioc;
-    last_reco_recompute_ = std::chrono::steady_clock::now() - std::chrono::hours(2);
 }
 
 SyncService::~SyncService() { stop(); }
@@ -94,6 +93,8 @@ void SyncService::stop() {
     wake_.notify_all();
     if (worker_.joinable())
         worker_.join();
+    if (recommendation_worker_.joinable())
+        recommendation_worker_.join();
 }
 
 void SyncService::seed_games() {
@@ -299,16 +300,83 @@ void SyncService::run_startup_sync() {
     sync_clips_all_phases();
 }
 
-void SyncService::start_periodic(int interval_minutes) {
-    if (worker_.joinable()) return;
+void SyncService::start_periodic(int interval_minutes, bool poll_twitch) {
+    if (worker_.joinable() || recommendation_worker_.joinable())
+        return;
     interval_minutes_ = std::clamp(interval_minutes, 1, 1440);
     stopping_ = false;
+    recommendation_worker_ = std::thread([this] {
+        uint64_t catalog_cursor = 0, user_cursor = 0;
+        while (!stopping_) {
+            try {
+                // Separate owner lease: Twitch polling cannot starve feature
+                // computation.
+                const std::string owner = "reco-" + std::to_string(std::random_device{}()) + ":" +
+                                          std::to_string(std::random_device{}());
+                const std::string key = "clipstream:recommendations:worker";
+                if (!cache_ || cache_->try_set_nx(key, owner, 120)) {
+                    try {
+                        if (catalog_cursor >= clip_repo_.recommendation_catalog_max_id())
+                            catalog_cursor = 0;
+                        clip_repo_.refresh_dirty_recommendation_features();
+                        catalog_cursor = clip_repo_.refresh_recommendation_features(catalog_cursor, 1000);
+                        database::ScopedConnection conn(db_pool_);
+                        const auto q = "SELECT user_id FROM recommendation_active_users "
+                                       "WHERE user_id>" +
+                                       std::to_string(user_cursor) +
+                                       " AND touched_at>UTC_TIMESTAMP()-INTERVAL 30 DAY "
+                                       "ORDER BY user_id LIMIT 20";
+                        database::query(conn.raw(), q.c_str());
+                        database::Result res(mysql_store_result(conn.raw()));
+                        std::vector<uint64_t> users;
+                        while (auto row = mysql_fetch_row(res))
+                            users.push_back(std::stoull(row[0]));
+                        res.reset();
+                        conn.release();
+                        if (users.empty())
+                            user_cursor = 0;
+                        for (auto user : users) {
+                            if (stopping_)
+                                break;
+                            if (cache_ && !cache_->compare_expire(key, owner, 120))
+                                break;
+                            try {
+                                clip_repo_.refresh_collaborative_predictions(user);
+                            } catch (const std::exception&) {
+                                std::cerr << "[Recommendations] Neighbor refresh failed for "
+                                             "one profile\n";
+                            }
+                            user_cursor = user;
+                        }
+                        database::ScopedConnection cleanup(db_pool_);
+                        database::query(cleanup.raw(),
+                                        "DELETE FROM recommendation_deliveries WHERE "
+                                        "served_at<UTC_TIMESTAMP()-INTERVAL 30 DAY LIMIT 5000");
+                        database::query(cleanup.raw(),
+                                        "DELETE FROM clip_twitch_snapshots WHERE "
+                                        "observed_at<UTC_TIMESTAMP()-INTERVAL 7 DAY LIMIT 5000");
+                    } catch (...) {
+                        if (cache_)
+                            cache_->compare_delete(key, owner);
+                        throw;
+                    }
+                    if (cache_)
+                        cache_->compare_delete(key, owner);
+                }
+            } catch (const std::exception&) {
+                std::cerr << "[Recommendations] Feature batch failed; retrying next cycle\n";
+            }
+            std::unique_lock lock(wake_mutex_);
+            wake_.wait_for(lock, std::chrono::seconds(30), [this] { return stopping_.load(); });
+        }
+    });
+    if (!poll_twitch)
+        return;
     worker_ = std::thread([this] {
         while (!stopping_) {
             retry_delay_seconds_ = 1;
             try {
                 run_startup_sync();
-                recompute_recommendations_periodic();
             } catch (const TwitchError& error) {
                 retry_delay_seconds_ = std::clamp(error.retry_after + 1, 5, 3600);
                 std::cerr << "[Sync] Twitch unavailable (status " << error.status
@@ -322,34 +390,6 @@ void SyncService::start_periodic(int interval_minutes) {
                            [this] { return stopping_.load(); });
         }
     });
-}
-
-void SyncService::recompute_recommendations_periodic() {
-    auto now = std::chrono::steady_clock::now();
-    if (now - last_reco_recompute_ < std::chrono::hours(1))
-        return;
-    last_reco_recompute_ = now;
-    try {
-        auto users = clip_repo_.get_recent_active_user_ids(30, 300);
-        for (auto user_id : users) {
-            auto similar = clip_repo_.get_similar_broadcasters(user_id, 12);
-            if (!similar.empty())
-                clip_repo_.upsert_user_recommendations(user_id, similar);
-        }
-        std::cout << "[Sync] user_recommendations recomputed for active users\n";
-    } catch (...) {
-        std::cerr << "[Sync] user_recommendations recompute failed\n";
-    }
-    if (clip_repo_.refresh_feature_store_clips()) {
-        std::cout << "[Sync] feature_store_clip refreshed\n";
-    } else {
-        std::cerr << "[Sync] feature_store_clip refresh failed\n";
-    }
-    if (clip_repo_.refresh_feature_store_users()) {
-        std::cout << "[Sync] feature_store_user refreshed\n";
-    } else {
-        std::cerr << "[Sync] feature_store_user refresh failed\n";
-    }
 }
 
 } // namespace clipstream::services

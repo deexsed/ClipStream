@@ -1,8 +1,11 @@
 #include "repositories/ClipRepository.hpp"
+#include "repositories/RecommendationWrites.hpp"
+#include "repositories/ClipFeedSql.hpp"
 #include "database/SqlEscape.hpp"
 #include "utils/TitleFingerprint.hpp"
 #include "utils/Utf8.hpp"
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstring>
 #include <deque>
@@ -18,6 +21,7 @@
 
 namespace clipstream::repositories {
 namespace {
+using namespace feed_sql;
 
 std::vector<std::string> split_terms(const std::string &query) {
     std::istringstream ss(query);
@@ -33,23 +37,6 @@ std::vector<std::string> split_terms(const std::string &query) {
     return terms;
 }
 
-template <typename T> void append_in_numeric(std::ostringstream &sql, const std::vector<T> &values) {
-    for (size_t i = 0; i < values.size(); ++i) {
-        if (i)
-            sql << ",";
-        sql << values[i];
-    }
-}
-
-void append_in_quoted(std::ostringstream &sql, const std::vector<std::string> &values,
-                      const std::function<std::string(const std::string &)> &esc) {
-    for (size_t i = 0; i < values.size(); ++i) {
-        if (i)
-            sql << ",";
-        sql << "'" << esc(values[i]) << "'";
-    }
-}
-
 const char *k_clip_platform_aggr_join = "LEFT JOIN (SELECT clip_id, COUNT(*) AS plat_pv FROM view_history "
                                         "GROUP BY clip_id) _plat_v ON _plat_v.clip_id=c.id "
                                         "LEFT JOIN (SELECT clip_id, COUNT(*) AS plat_pc FROM comments GROUP "
@@ -58,44 +45,6 @@ const char *k_clip_platform_aggr_join = "LEFT JOIN (SELECT clip_id, COUNT(*) AS 
                                         "SUM(CASE WHEN is_like=1 THEN 1 ELSE 0 END) AS plat_pl, "
                                         "SUM(CASE WHEN is_like=0 THEN 1 ELSE 0 END) AS plat_pd "
                                         "FROM likes GROUP BY clip_id) _plat_l ON _plat_l.clip_id=c.id ";
-
-void append_public_feed_filters(std::ostringstream &sql, const FeedMuteSet *mutes,
-                                const std::function<std::string(const std::string &)> &esc) {
-    sql << " AND c.unavailable_at IS NULL AND c.moderation_hidden=0 ";
-    if (!mutes)
-        return;
-    if (!mutes->exclude_clip_ids.empty()) {
-        sql << " AND c.id NOT IN (";
-        append_in_numeric(sql, mutes->exclude_clip_ids);
-        sql << ")";
-    }
-    if (!mutes->mute_game_ids.empty()) {
-        sql << " AND (c.game_id IS NULL OR c.game_id NOT IN (";
-        append_in_numeric(sql, mutes->mute_game_ids);
-        sql << "))";
-    }
-    if (!mutes->mute_broadcaster_ids.empty()) {
-        sql << " AND (c.broadcaster_id='' OR c.broadcaster_id NOT IN (";
-        append_in_quoted(sql, mutes->mute_broadcaster_ids, esc);
-        sql << "))";
-    }
-    if (!mutes->mute_broadcaster_logins.empty()) {
-        sql << " AND c.broadcaster_name NOT IN (";
-        append_in_quoted(sql, mutes->mute_broadcaster_logins, esc);
-        sql << ")";
-    }
-    for (const auto &kw : mutes->mute_title_keywords) {
-        if (kw.empty())
-            continue;
-        sql << " AND c.title NOT LIKE '%" << esc(kw) << "%'";
-    }
-    if (!mutes->only_broadcast_langs.empty()) {
-        sql << " AND (c.broadcaster_lang='' OR c.broadcaster_lang IN (";
-        append_in_quoted(sql, mutes->only_broadcast_langs, esc);
-        sql << "))";
-    }
-    sql << " ";
-}
 
 void append_trends_period_filter(std::ostringstream &sql, TimePeriod period, const char *twitch_dt) {
     switch (period) {
@@ -115,26 +64,6 @@ void append_trends_period_filter(std::ostringstream &sql, TimePeriod period, con
         sql << " AND c.view_count >= 50";
         break;
     }
-}
-
-std::string promo_boost_subquery(const char *placement_csv) {
-    std::ostringstream o;
-    o << "(SELECT p.clip_id, MAX(p.boost_score) AS promo_boost FROM clip_promotions p "
-      << "WHERE (p.starts_at IS NULL OR p.starts_at <= UTC_TIMESTAMP()) "
-      << "AND (p.ends_at IS NULL OR p.ends_at >= UTC_TIMESTAMP()) "
-      << "AND p.placement IN (" << placement_csv << ") GROUP BY p.clip_id) promo";
-    return o.str();
-}
-
-std::string promo_boost_label_subquery(const char *placement_csv) {
-    std::ostringstream o;
-    o << "(SELECT p.clip_id, MAX(p.boost_score) AS promo_boost, "
-      << "SUBSTRING(MAX(CONCAT(LPAD(p.id,12,'0'), IFNULL(p.label,''))), 13) AS promo_lbl "
-      << "FROM clip_promotions p "
-      << "WHERE (p.starts_at IS NULL OR p.starts_at <= UTC_TIMESTAMP()) "
-      << "AND (p.ends_at IS NULL OR p.ends_at >= UTC_TIMESTAMP()) "
-      << "AND p.placement IN (" << placement_csv << ") GROUP BY p.clip_id) promo";
-    return o.str();
 }
 
 } // namespace
@@ -1542,11 +1471,11 @@ uint64_t ClipRepository::create_on_connection(MYSQL *conn, const models::Clip &c
                                : clip.title_fingerprint;
 
     std::ostringstream sql;
-    sql << "INSERT INTO clips (twitch_clip_id, title, title_fingerprint, thumbnail_url, embed_url, duration, "
+    sql << "INSERT INTO clips (discovery_bucket,twitch_clip_id, title, title_fingerprint, thumbnail_url, embed_url, duration, "
         << "view_count, broadcaster_name, broadcaster_id, broadcaster_avatar, broadcaster_lang, "
            "broadcaster_login, is_mature, classification_source, game_id, author_id, "
-        << "clip_creator_twitch_id, clip_creator_login, vod_id, vod_offset, twitch_created_at) VALUES ('"
-        << esc(clip.twitch_clip_id) << "','" << esc(clip.title) << "','" << esc(fp) << "','"
+        << "clip_creator_twitch_id, clip_creator_login, vod_id, vod_offset, twitch_created_at) VALUES (MOD(CRC32('"
+        << esc(clip.twitch_clip_id) << "'),32),'" << esc(clip.twitch_clip_id) << "','" << esc(clip.title) << "','" << esc(fp) << "','"
         << esc(clip.thumbnail_url) << "','" << esc(clip.embed_url) << "'," << clip.duration << ","
         << clip.view_count << ",'" << esc(clip.broadcaster_name) << "','" << esc(clip.broadcaster_id) << "','"
         << esc(clip.broadcaster_avatar) << "','" << esc(clip.broadcaster_lang) << "','"
@@ -1558,6 +1487,7 @@ uint64_t ClipRepository::create_on_connection(MYSQL *conn, const models::Clip &c
         << (clip.twitch_created_at.empty() ? "NULL" : "'" + esc(clip.twitch_created_at) + "'")
         << ") ON DUPLICATE KEY UPDATE "
         << "id=LAST_INSERT_ID(id), "
+        << "discovery_bucket=VALUES(discovery_bucket), "
         << "title=VALUES(title), "
         << "title_fingerprint=VALUES(title_fingerprint), "
         << "thumbnail_url=VALUES(thumbnail_url), "
@@ -1606,30 +1536,24 @@ bool ClipRepository::remove(uint64_t id) {
 }
 
 bool ClipRepository::record_user_view(uint64_t user_id, uint64_t clip_id) {
+    return database::retry_transaction([&] {
     database::ScopedConnection conn(pool_);
+    database::Transaction tx(conn.raw());
     std::string sql = "INSERT INTO view_history (user_id, clip_id, viewed_at) VALUES (" +
                       std::to_string(user_id) + "," + std::to_string(clip_id) + ", UTC_TIMESTAMP())";
     if (database::query(conn.raw(), sql.c_str()) != 0)
         return false;
 
-    std::string cnt_sql = "SELECT COUNT(*) FROM view_history WHERE user_id=" + std::to_string(user_id) +
-                          " AND clip_id=" + std::to_string(clip_id);
-    if (database::query(conn.raw(), cnt_sql.c_str()) != 0)
-        return true;
-    database::Result res(mysql_store_result(conn.raw()));
-    if (!res)
-        return true;
-    MYSQL_ROW row = mysql_fetch_row(res);
-    uint64_t cnt = row && row[0] ? std::stoull(row[0]) : 0;
-    res.reset();
-    if (cnt < 2)
-        return true;
-
-    std::string rep = "INSERT INTO user_clip_engagement (user_id, clip_id, replay_count) VALUES (" +
-                      std::to_string(user_id) + "," + std::to_string(clip_id) +
-                      ",1) ON DUPLICATE KEY UPDATE replay_count=replay_count+1";
-    database::query(conn.raw(), rep.c_str());
+    const auto activity = "INSERT INTO recommendation_activity(user_id,clip_id) VALUES(" +
+        std::to_string(user_id) + "," + std::to_string(clip_id) +
+        ") ON DUPLICATE KEY UPDATE last_opened_at=IF(last_opened_at<UTC_TIMESTAMP()-INTERVAL 30 MINUTE,"
+        "UTC_TIMESTAMP(),last_opened_at)";
+    database::query(conn.raw(), activity.c_str());
+    if(mysql_affected_rows(conn.raw())>0)
+        mark_recommendation_dirty(conn.raw(),user_id,clip_id);
+    tx.commit();
     return true;
+    });
 }
 
 bool ClipRepository::upsert_clip_engagement(uint64_t user_id, uint64_t clip_id, float watched_sec,
@@ -1752,7 +1676,13 @@ bool ClipRepository::add_feed_block(uint64_t user_id, const std::string &target_
     auto esc = [&](const std::string &s) { return database::escape(conn.raw(), s); };
     std::string sql = "INSERT IGNORE INTO user_feed_blocks (user_id, target_key) VALUES (" +
                       std::to_string(user_id) + ",'" + esc(target_key) + "')";
-    return database::query(conn.raw(), sql.c_str()) == 0;
+    database::query(conn.raw(), sql.c_str());
+    if(target_key.starts_with("clip:")) {
+        const auto id=std::stoull(target_key.substr(5));
+        database::query(conn.raw(),("INSERT INTO recommendation_dirty_clips(clip_id) SELECT id FROM clips WHERE id="+
+            std::to_string(id)+" ON DUPLICATE KEY UPDATE generation=generation+1").c_str());
+    }
+    return true;
 }
 
 LikeUpsertResult ClipRepository::upsert_user_like(uint64_t user_id, uint64_t clip_id, bool want_like) {
@@ -1804,12 +1734,13 @@ LikeUpsertResult ClipRepository::upsert_user_like(uint64_t user_id, uint64_t cli
         else
             mutation = "INSERT INTO likes(user_id,clip_id,is_like) VALUES(" + std::to_string(user_id) + "," +
                        std::to_string(clip_id) + "," + (want_like ? "1" : "0") +
-                       ") ON DUPLICATE KEY UPDATE is_like=VALUES(is_like)";
+                       ") ON DUPLICATE KEY UPDATE is_like=VALUES(is_like),created_at=UTC_TIMESTAMP()";
         database::query(c, mutation.c_str());
         auto count = "UPDATE clips SET like_count=GREATEST(0,like_count+(" + std::to_string(likes) +
                      ")),dislike_count=GREATEST(0,dislike_count+(" + std::to_string(dislikes) +
                      ")) WHERE id=" + std::to_string(clip_id);
         database::query(c, count.c_str());
+        mark_recommendation_dirty(c,user_id,clip_id);
         if (owner == 0 && !creator.empty()) {
             auto lookup = "SELECT id FROM users WHERE twitch_id='" + database::escape(c, creator) + "'";
             database::query(c, lookup.c_str());
@@ -2517,6 +2448,98 @@ bool ClipRepository::update_broadcaster_metadata(uint64_t id, const std::string 
     std::string sql = "UPDATE clips SET broadcaster_id='" + esc(broadcaster_id) + "', broadcaster_avatar='" +
                       esc(avatar_url) + "' WHERE id=" + std::to_string(id);
     return database::query(conn.raw(), sql.c_str()) == 0;
+}
+
+void ClipRepository::fill_card_counts(const std::vector<models::Clip *> &clips) {
+    std::vector<uint64_t> ids;
+    for (auto *clip : clips)
+        if (clip)
+            ids.push_back(clip->id);
+    if (ids.empty())
+        return;
+    std::ostringstream sql;
+    sql << "SELECT c.id,(SELECT COUNT(*) FROM comments cm WHERE cm.clip_id=c.id),"
+           "(SELECT COUNT(*) FROM view_history vh WHERE vh.clip_id=c.id) "
+           "FROM clips c WHERE c.id IN (";
+    append_in_numeric(sql, ids);
+    sql << ")";
+    database::ScopedConnection conn(pool_);
+    if (database::query(conn.raw(), sql.str().c_str()))
+        return;
+    database::Result result(mysql_store_result(conn.raw()));
+    if (!result)
+        return;
+    std::unordered_map<uint64_t, std::pair<uint64_t, uint64_t>> counts;
+    while (auto row = mysql_fetch_row(result))
+        counts.emplace(std::stoull(row[0]), std::pair{std::stoull(row[1]), std::stoull(row[2])});
+    for (auto *clip : clips)
+        if (clip) {
+            const auto count = counts.find(clip->id);
+            if (count != counts.end()) {
+                clip->comment_count = count->second.first;
+                clip->platform_view_count = count->second.second;
+            }
+        }
+}
+
+void ClipRepository::fill_user_votes(const std::vector<models::Clip *> &clips, uint64_t user_id) {
+    std::vector<uint64_t> ids;
+    std::unordered_map<uint64_t, models::Clip *> targets;
+    for (auto *clip : clips) {
+        if (clip) {
+            clip->user_vote.reset();
+            ids.push_back(clip->id);
+            targets.emplace(clip->id, clip);
+        }
+    }
+    if (!user_id || ids.empty())
+        return;
+    std::ostringstream sql;
+    sql << "SELECT c.id,l.is_like,c.like_count,c.dislike_count FROM clips c "
+           "LEFT JOIN likes l ON l.clip_id=c.id AND l.user_id=" << user_id << " WHERE c.id IN (";
+    append_in_numeric(sql, ids);
+    sql << ")";
+    database::ScopedConnection conn(pool_);
+    if (database::query(conn.raw(), sql.str().c_str()))
+        return;
+    database::Result result(mysql_store_result(conn.raw()));
+    if (!result)
+        return;
+    while (auto row = mysql_fetch_row(result)) {
+        auto target = targets.find(std::stoull(row[0]));
+        if (target == targets.end())
+            continue;
+        auto &clip = *target->second;
+        if (row[1])
+            clip.user_vote = std::string(row[1]) == "1";
+        clip.like_count = std::stoi(row[2]);
+        clip.dislike_count = std::stoi(row[3]);
+    }
+}
+
+std::vector<nlohmann::json> ClipRepository::get_viewed_games(uint64_t user_id) {
+    if (!user_id)
+        return {};
+    database::ScopedConnection conn(pool_);
+    // Rank only the viewer's history; deterministic ties favour recent discoveries.
+    const std::string sql =
+        "SELECT g.id,g.name,g.box_art,COUNT(*) AS watched_count "
+        "FROM view_history vh JOIN clips c ON c.id=vh.clip_id "
+        "JOIN games g ON g.id=c.game_id WHERE vh.user_id=" + std::to_string(user_id) +
+        " AND c.unavailable_at IS NULL AND c.moderation_hidden=0 "
+        "GROUP BY g.id ORDER BY watched_count DESC,MAX(vh.viewed_at) DESC,g.id LIMIT 10";
+    if (database::query(conn.raw(), sql.c_str()))
+        return {};
+    database::Result result(mysql_store_result(conn.raw()));
+    if (!result)
+        return {};
+    std::vector<nlohmann::json> games;
+    while (auto row = mysql_fetch_row(result)) {
+        games.push_back({{"id", std::stoull(row[0])}, {"name", std::string(row[1])},
+                         {"box_art", row[2] ? nlohmann::json(row[2]) : nlohmann::json(nullptr)},
+                         {"watched_count", std::stoull(row[3])}});
+    }
+    return games;
 }
 
 std::vector<nlohmann::json> ClipRepository::get_games() {

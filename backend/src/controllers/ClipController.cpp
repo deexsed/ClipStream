@@ -52,6 +52,12 @@ void ClipController::register_routes(server::Router &router) {
     router.get("/channels/profile", [this](const server::Request &r) { return handle_channel_profile(r); });
     router.get("/clips/home", [this](const server::Request &r) { return handle_home_sections(r); });
     router.get("/clips/home-feed", [this](const server::Request &r) { return handle_home_feed(r); });
+    router.post("/clips/impressions", [this](const server::Request &r) {
+        if (!r.body.contains("delivery_ids") || !r.body["delivery_ids"].is_array())
+            return server::Response{400, {{"error", "Missing delivery_ids"}}};
+        service_.record_recommendation_impressions(r.user_id,r.body["delivery_ids"].get<std::vector<std::string>>());
+        return server::Response{200, {{"ok", true}}};
+    });
     router.get("/admin/analytics/summary",
                [this](const server::Request &r) { return handle_admin_analytics_summary(r); });
     router.get("/clips", [this](const server::Request &r) { return handle_get_feed(r); });
@@ -438,38 +444,14 @@ server::Response ClipController::handle_home_feed(const server::Request &req) {
         }
     }
 
-    std::vector<uint64_t> exclude;
-    auto ex_it = req.query.find("exclude");
-    if (ex_it != req.query.end()) {
-        const std::string &s = ex_it->second;
-        std::string cur;
-        for (char ch : s) {
-            if (ch == ',') {
-                if (!cur.empty() && exclude.size() < 200) {
-                    try {
-                        exclude.push_back(std::stoull(cur));
-                    } catch (...) {
-                    }
-                    cur.clear();
-                }
-            } else if (ch >= '0' && ch <= '9')
-                cur += ch;
-        }
-        if (!cur.empty() && exclude.size() < 200) {
-            try {
-                exclude.push_back(std::stoull(cur));
-            } catch (...) {
-            }
-        }
-    }
-
-    std::string session_id;
-    auto qs = req.query.find("session_id");
-    if (qs != req.query.end())
-        session_id = qs->second;
-
-    return {200,
-            service_.get_home_feed(req.user_id, limit, exclude, session_id, parse_clip_langs_query(req))};
+    auto value = [&](const char *key) {
+        auto it=req.query.find(key);
+        return it==req.query.end()?std::string{}:it->second;
+    };
+    auto surface=value("surface");
+    if(surface.empty()) surface="home";
+    return {200,service_.get_home_feed(req.user_id,limit,value("cursor"),value("session_id"),
+                                      parse_clip_langs_query(req),surface)};
 }
 
 server::Response ClipController::handle_admin_analytics_summary(const server::Request &req) {
@@ -515,8 +497,11 @@ server::Response ClipController::handle_report_clip(const server::Request &req) 
     return {200, {{"ok", true}}};
 }
 
-server::Response ClipController::handle_games(const server::Request &) {
-    auto games = service_.get_games();
+server::Response ClipController::handle_games(const server::Request &req) {
+    const bool personalized = req.query.contains("personalized") && req.query.at("personalized") == "1";
+    auto games = personalized ? (req.user_id ? service_.get_games(req.user_id)
+                                           : std::vector<nlohmann::json>{})
+                              : service_.get_games();
     return {200, {{"games", games}}};
 }
 
@@ -575,6 +560,7 @@ server::Response ClipController::handle_followed_channels(const server::Request 
     std::string access_token = auth_.user_access_token(user->id);
 
     auto followed_channels = twitch_.get_followed_channels(access_token, user->twitch_id, 100);
+    service_.save_recommendation_twitch_follows(req.user_id,followed_channels);
     auto followed_streams = twitch_.get_followed_streams(access_token, user->twitch_id, 100);
     std::unordered_map<std::string, nlohmann::json> live_by_id;
     live_by_id.reserve(followed_streams.size());

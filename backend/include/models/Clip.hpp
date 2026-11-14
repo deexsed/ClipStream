@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,9 @@ struct Clip {
     uint32_t view_count{};
     int like_count{};
     int dislike_count{};
+    std::optional<uint64_t> comment_count;
+    std::optional<uint64_t> platform_view_count;
+    std::optional<bool> user_vote;
     std::string broadcaster_name;
     std::string broadcaster_login;
     std::string broadcaster_id;
@@ -69,6 +73,13 @@ inline void to_json(nlohmann::json &j, const Clip &c) {
          {"classification_source", c.classification_source}};
     if (!c.promo_label.empty())
         j["promo_label"] = c.promo_label;
+    if (c.comment_count)
+        j["comment_count"] = *c.comment_count;
+    if (c.platform_view_count)
+        j["platform_view_count"] = *c.platform_view_count;
+    j["user_vote"] = c.user_vote.has_value()
+                         ? nlohmann::json(*c.user_vote ? "like" : "dislike")
+                         : nlohmann::json(nullptr);
     if (!c.creator_login.empty())
         j["creator_login"] = c.creator_login;
     if (!c.creator_twitch_id.empty())

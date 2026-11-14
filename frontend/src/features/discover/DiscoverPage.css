@@ -1,0 +1,320 @@
+/* Discovery owns its layout; watch/profile cards keep their existing geometry. */
+.page.discover-page {
+  max-width: none;
+  padding: 28px clamp(18px, 2.2vw, 48px) 48px;
+}
+.discover-page .page-heading {
+  align-items: center;
+  margin-bottom: 24px;
+}
+.discover-page .page-heading h1 {
+  font-size: clamp(1.8rem, 2.2vw, 2.6rem);
+  letter-spacing: -0.045em;
+  line-height: 1.15;
+}
+.discover-page .page-heading .eyebrow {
+  margin-bottom: 8px;
+  color: var(--accent);
+}
+.discover-page .page-heading .muted {
+  margin-top: 9px;
+}
+.overview-watch {
+  flex: none;
+}
+.overview-section-label {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.overview-section-label .muted {
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+.overview-category-hint {
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+.overview-categories .category-strip {
+  margin-bottom: 22px;
+  gap: 10px;
+}
+.overview-categories .category-strip > a {
+  min-height: 48px;
+  padding: 7px 12px;
+  background: var(--panel);
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+  border-radius: 10px;
+}
+.overview-categories .category-strip img {
+  width: 25px;
+  height: 33px;
+}
+.overview-tabs {
+  display: flex;
+  gap: 22px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 22px;
+}
+.overview-tabs > button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 2px 12px;
+  color: var(--muted);
+  font-weight: 550;
+  white-space: nowrap;
+  background: transparent;
+  border-radius: 6px 6px 0 0;
+}
+:root .overview-tabs > button[aria-pressed="true"] {
+  color: var(--accent);
+  background: transparent;
+}
+:root .overview-tabs > button[aria-pressed]:hover {
+  background: transparent;
+}
+.overview-tabs > button[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  height: 2px;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  border-radius: 3px 3px 0 0;
+  background: var(--accent);
+}
+.discover-page .overview-filter-bar {
+  margin-bottom: 20px;
+  gap: 16px;
+}
+.overview-feed-heading {
+  min-width: 0;
+}
+.overview-feed-heading h2 {
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+.overview-feed-heading > p {
+  font-size: 0.82rem;
+  margin-top: 4px;
+}
+.overview-feed-heading .segmented {
+  margin-top: 10px;
+}
+.overview-feed-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.overview-density {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.overview-density button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 34px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.overview-density button[aria-pressed="true"] {
+  background: var(--raised);
+  color: var(--accent);
+}
+.discover-page .overview-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 310px), 1fr));
+  gap: 24px 20px;
+}
+.discover-page[data-density="compact"] .overview-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 245px), 1fr));
+  gap: 20px 16px;
+}
+.overview-card {
+  min-width: 0;
+}
+.overview-card .thumbnail {
+  border-radius: 12px;
+}
+.overview-card .card-description {
+  margin-top: 9px;
+  gap: 10px;
+}
+.overview-card .card-description > .avatar {
+  width: 30px;
+  height: 30px;
+  margin-top: 1px;
+}
+.overview-card .clip-title {
+  font-size: 1.1rem;
+  line-height: 1.4;
+  font-weight: 620;
+  letter-spacing: -0.015em;
+}
+.overview-card .card-channel {
+  margin-top: 3px;
+  font-size: 0.85rem;
+  flex-wrap: nowrap;
+  gap: 5px;
+}
+.overview-card .overview-card-category::before {
+  content: "·";
+  margin-right: 5px;
+}
+.overview-card .card-channel a,
+.overview-card .card-category > a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.overview-card .card-category {
+  margin-top: 2px;
+  font-size: 0.75rem;
+}
+.overview-card .card-category > span {
+  display: inline;
+  flex: none;
+}
+.overview-card-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 9px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+.overview-card-views,
+.overview-card-reactions {
+  display: contents;
+}
+.overview-card-views > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.overview-card-views img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+.overview-card-summary svg {
+  width: 16px;
+  height: 16px;
+}
+.overview-card-views .lucide-twitch {
+  color: var(--accent);
+}
+.overview-card-date {
+  white-space: nowrap;
+  font-size: inherit;
+}
+.overview-card-reactions button,
+.overview-card-reactions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 3px 4px;
+  border-radius: 7px;
+  color: var(--muted);
+}
+.overview-card-reactions button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--theme-selected-bg, #30293e);
+}
+.overview-vote-error {
+  flex-basis: 100%;
+  color: var(--theme-danger-text, #f2a4b5);
+}
+.overview-card .clip-duration {
+  color: #fff;
+}
+@media (hover: hover) and (pointer: fine) {
+  .overview-card-reactions button:hover:not(:disabled),
+  .overview-card-reactions a:hover {
+    color: var(--accent);
+    background: var(--raised);
+  }
+  .overview-tabs > button:hover,
+  .overview-density button:hover {
+    color: var(--accent);
+  }
+  .overview-categories .category-strip > a:hover {
+    background: var(--raised);
+  }
+  .overview-card .clip-title:hover,
+  .overview-card .card-channel a:hover,
+  .overview-card .card-category a:hover {
+    color: var(--accent);
+  }
+}
+@media (max-width: 680px) {
+  .page.discover-page {
+    padding: 22px 16px 32px;
+  }
+  .discover-page .page-heading {
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .overview-section-label {
+    flex-wrap: wrap;
+    gap: 3px 12px;
+  }
+  .overview-tabs {
+    gap: 12px;
+    overflow-x: auto;
+  }
+  .overview-tabs > button {
+    font-size: 0.85rem;
+    flex: none;
+  }
+  .overview-feed-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .discover-page[data-density="compact"] .overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 10px;
+  }
+  .discover-page[data-density="compact"] .overview-card .avatar {
+    display: none;
+  }
+  .discover-page[data-density="compact"] .overview-card .clip-title {
+    font-size: 0.96rem;
+  }
+  .discover-page[data-density="compact"] .overview-card .card-channel {
+    flex-wrap: wrap;
+    row-gap: 1px;
+  }
+  .discover-page[data-density="compact"] .overview-card .card-channel a {
+    max-width: 100%;
+  }
+
+  .overview-card-reactions button,
+  .overview-card-reactions a {
+    min-height: 36px;
+  }
+  .discover-page[data-density="compact"] .overview-card-reactions {
+    gap: 2px;
+  }
+  .discover-page[data-density="compact"] .overview-card-views {
+    font-size: inherit;
+    gap: 3px 8px;
+  }
+}
