@@ -187,11 +187,6 @@ select {
   border-color: #d6ceff;
   color: #201a32;
 }
-.button:active:not(:disabled),
-.icon-button:active {
-  transform: scale(0.97);
-  transition-duration: 80ms;
-}
 .icon-button {
   position: relative;
   display: inline-flex;
@@ -1469,15 +1464,6 @@ td .button {
   margin-top: 16px;
 }
 @media (hover: hover) and (pointer: fine) {
-  .button:hover:not(:disabled) {
-    background: #303037;
-  }
-  .button-primary:hover:not(:disabled) {
-    background: #e3deff;
-  }
-  .icon-button:hover {
-    background: #2a2a32;
-  }
   .side-navigation > a:hover,
   .side-group > a:hover {
     background: #232329;
@@ -2537,5 +2523,63 @@ h3 {
   .bottom-navigation > a {
     min-width: 0;
     padding-inline: 6px;
+  }
+}
+/* Immediate press feedback; keyboard and reduced-motion paths stay still. */
+button:not(.ui-select-option):not(.ui-select),
+a.button,
+a.icon-button {
+  touch-action: manipulation;
+  transition:
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 140ms,
+    border-color 140ms,
+    box-shadow 180ms;
+}
+:is(button, a.button, a.icon-button):active:not(:disabled):not(
+    :focus-visible
+  ):not(.ui-select) {
+  transform: scale(0.97);
+  transition-duration: 70ms;
+}
+:is(button, a.button, a.icon-button):focus-visible {
+  outline: 2px solid #bba6ef;
+  outline-offset: 3px;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+button[aria-busy="true"] {
+  cursor: progress;
+}
+.button[aria-busy="true"] {
+  opacity: 0.78;
+}
+@media (hover: hover) and (pointer: fine) {
+  .button:hover:not(:disabled) {
+    background-color: #302c39;
+    border-color: #61566f;
+    box-shadow: 0 3px 12px #0002;
+  }
+  .button-primary:hover:not(:disabled) {
+    background-color: #e3d7ff;
+    border-color: #e3d7ff;
+    box-shadow: 0 3px 18px #bea0ff25;
+  }
+  .icon-button:hover:not(:disabled) {
+    background-color: #302a3a;
+    box-shadow: inset 0 0 0 1px #bca6dc20;
+  }
+  .button[aria-pressed="true"]:hover:not(:disabled) {
+    background-color: #40334f;
+    border-color: #b49bd3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  button:not(.ui-select-option):not(.ui-select),
+  a.button,
+  a.icon-button {
+    transform: none !important;
+    transition: none;
   }
 }
