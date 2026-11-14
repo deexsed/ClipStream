@@ -14,7 +14,7 @@ Invoke-RestMethod http://localhost/api/health/ready
 docker compose --env-file .env logs --tail=100 api worker migrate
 ```
 
-API запускается только после успешной миграции. MySQL/Redis readiness проверяются до неё. Контейнеры API/frontend/edge работают без root, с read-only filesystem; временные файлы идут в tmpfs. Логи edge исключают query strings и callback, чтобы не сохранять OAuth code. Не включайте отладочный access log с `$request` на callback.
+API запускается только после успешной миграции. MySQL readiness проверяет `SELECT 1` по TCP с учётными данными приложения и выбранной БД: временный socket-only сервер инициализации не считается готовым. Для первого создания файлов предусмотрен `start_period: 180s`; инициализация и DDL на медленном Docker volume могут занять несколько минут. Redis readiness также проверяется до миграции. Контейнеры API/frontend/edge работают без root, с read-only filesystem; временные файлы идут в tmpfs. Логи edge исключают query strings и callback, чтобы не сохранять OAuth code. Не включайте отладочный access log с `$request` на callback.
 
 Изменение пароля в файле не меняет пароль существующего MySQL/Redis автоматически. Ротация требует согласованного обновления сервиса и клиентов. `docker compose down` сохраняет volumes. Не используйте `down -v` для рабочей базы.
 
