@@ -12,6 +12,26 @@ export function normalizeLanguages(value) {
   ].sort();
 }
 export function PreferencesProvider({ children }) {
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem("clipstream.theme") === "light"
+        ? "light"
+        : "dark";
+    } catch {
+      return "dark";
+    }
+  });
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", theme === "light" ? "#f7f7fb" : "#111113");
+    try {
+      localStorage.setItem("clipstream.theme", theme);
+    } catch {
+      /* Theme remains usable when storage is unavailable. */
+    }
+  }, [theme]);
   const [params, setParams] = useSearchParams();
   const [stored, setStored] = useState(() => {
     try {
@@ -52,6 +72,9 @@ export function PreferencesProvider({ children }) {
   return (
     <Context.Provider
       value={{
+        theme,
+        toggleTheme: () =>
+          setTheme((current) => (current === "dark" ? "light" : "dark")),
         languages,
         languageKey: signature,
         toggleLanguage: (code) =>

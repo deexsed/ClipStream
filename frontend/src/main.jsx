@@ -8,6 +8,7 @@ import { SessionProvider } from "./features/auth/Session";
 import { ErrorBoundary } from "./shared/ui/Primitives";
 import "./styles/index.css";
 import "./styles/interactions.css";
+import "./styles/themes.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>

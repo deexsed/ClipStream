@@ -15,6 +15,8 @@ import {
   Zap,
   Grid2X2,
   Languages,
+  Moon,
+  Sun,
   LogOut,
   Play,
   Search,
@@ -68,6 +70,7 @@ function ShellContent() {
   const search = useRef(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [languagesOpen, setLanguagesOpen] = useState(false);
+  const [languageSearch, setLanguageSearch] = useState("");
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const config = useApi("/config", { staleTime: 300000 });
   const followed = useApi(session.user ? "/channels/followed" : null, {
@@ -77,7 +80,16 @@ function ShellContent() {
   const alerts = useApi(session.user ? "/notifications/unread-count" : null, {
     refetchInterval: 60000,
   });
-  const { languages, toggleLanguage, resetLanguages } = usePreferences();
+  const { languages, toggleLanguage, resetLanguages, theme, toggleTheme } =
+    usePreferences();
+  const selectedLanguages = TWITCH_BROADCAST_LANGUAGES.filter(({ code }) =>
+    languages.includes(code),
+  );
+  const languageQuery = languageSearch.trim().toLocaleLowerCase();
+  const visibleLanguages = TWITCH_BROADCAST_LANGUAGES.filter(
+    ({ code, label }) =>
+      `${label} ${code}`.toLocaleLowerCase().includes(languageQuery),
+  );
   const openLogin = () => setLoginOpen(true);
   useEffect(() => {
     setNotificationsOpen(false);
@@ -157,13 +169,30 @@ function ShellContent() {
           />
         </form>
         <div className="header-actions">
-          <IconButton
-            label="Языки клипов"
+          <Button
+            className="clip-language-trigger"
+            aria-label="Языки клипов"
             aria-haspopup="dialog"
-            onClick={() => setLanguagesOpen(true)}
+            onClick={() => {
+              setLanguageSearch("");
+              setLanguagesOpen(true);
+            }}
           >
             <Languages size={19} />
-            {languages.length > 0 && <span className="notification-dot" />}
+            <span className="clip-language-label">Языки клипов</span>
+            <span className="clip-language-value">
+              {languages.length || "Все"}
+            </span>
+          </Button>
+          <IconButton
+            label={
+              theme === "dark"
+                ? "Включить светлую тему"
+                : "Включить тёмную тему"
+            }
+            onClick={toggleTheme}
+          >
+            {theme === "dark" ? <Sun size={19} /> : <Moon size={19} />}
           </IconButton>
           {session.authenticated ? (
             <>
@@ -304,11 +333,41 @@ function ShellContent() {
         title="Языки клипов"
       >
         <p className="muted">
-          Выберите языки, на которых вам интересно смотреть. Без выбора
-          показываются все.
+          Фильтр по языку речи в клипах Twitch. Можно выбрать несколько языков.
+          Язык интерфейса не меняется. Без выбора показываются все клипы.
         </p>
+        <label className="language-search">
+          Найти язык
+          <input
+            type="search"
+            value={languageSearch}
+            onChange={(event) => setLanguageSearch(event.target.value)}
+            placeholder="Название или код: Русский, EN…"
+          />
+        </label>
+        <div className="language-selection">
+          <p className="muted" role="status">
+            {languages.length
+              ? `Выбрано: ${languages.length}`
+              : "Показываются клипы на всех языках"}
+          </p>
+          {selectedLanguages.length > 0 && (
+            <div className="language-chips">
+              {selectedLanguages.map(({ code, label }) => (
+                <button
+                  key={code}
+                  onClick={() => toggleLanguage(code)}
+                  aria-label={`Убрать язык: ${label}`}
+                >
+                  {label}
+                  <X size={14} />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="language-options">
-          {TWITCH_BROADCAST_LANGUAGES.map(({ code, label }) => (
+          {visibleLanguages.map(({ code, label }) => (
             <label key={code}>
               <input
                 type="checkbox"
@@ -320,6 +379,11 @@ function ShellContent() {
             </label>
           ))}
         </div>
+        {visibleLanguages.length === 0 && (
+          <p className="muted">
+            Язык не найден. Попробуйте другое название или код.
+          </p>
+        )}
         <div className="dialog-actions">
           <Button onClick={resetLanguages}>Все языки</Button>
           <Button variant="primary" onClick={() => setLanguagesOpen(false)}>

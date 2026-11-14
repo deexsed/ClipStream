@@ -1,0 +1,187 @@
+/* Explicit light palette; fallbacks in component styles preserve the dark palette. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  color: #242331;
+  background: #f7f7fb;
+  --bg: #f7f7fb;
+  --panel: #ffffff;
+  --raised: #efedf5;
+  --line: #d9d6e3;
+  --muted: #656071;
+  --accent: #6043ae;
+  --theme-text: #242331;
+  --theme-panel: #ffffff;
+  --theme-raised: #efedf5;
+  --theme-line: #d9d6e3;
+  --theme-control-line: #82788f;
+  --theme-muted: #656071;
+  --theme-accent: #6043ae;
+  --theme-selected-bg: #e9e2fa;
+  --theme-selected-text: #49317e;
+  --theme-marker: #b02b50;
+  --theme-overlay-bg: #ffffffed;
+  --theme-overlay-text: #242331;
+  --theme-dialog-shadow: 0 18px 60px #24233130;
+  --theme-popover-shadow: 0 8px 24px #24233126;
+  --theme-danger-text: #a92b45;
+  --theme-danger-bg: #fce7ed;
+  --theme-success-text: #287443;
+}
+:root[data-theme="light"] .button-primary {
+  background: #6043ae;
+  border-color: #6043ae;
+  color: #fff;
+}
+:root[data-theme="light"] .skip-link {
+  color: #fff;
+}
+:root[data-theme="light"] :is(input, textarea)::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+:root[data-theme="light"] .table-scroll {
+  background: var(--panel);
+}
+:root[data-theme="light"] th {
+  background: var(--raised);
+}
+:root[data-theme="light"] .header-search:focus-within {
+  background: #f3effb;
+}
+:root[data-theme="light"] .language-options label:has(input:checked) {
+  background: #e9e2fa;
+  color: #49317e;
+}
+:root[data-theme="light"] .bottom-navigation {
+  background: #fffffff2;
+}
+/* Keep contrast for text on thumbnails and video overlays. */
+.clip-duration,
+.rank,
+.promotion-label,
+.play-affordance {
+  color: #efeff2;
+}
+.external-play {
+  color: var(--theme-overlay-text, #efeff2);
+}
+:root[data-theme="light"] .rush {
+  background: var(--bg);
+}
+:root[data-theme="light"] .rush-heading {
+  background: linear-gradient(#f7f7fbf2, #f7f7fb00);
+}
+:root[data-theme="light"] .player-container,
+:root[data-theme="light"] .preroll-video {
+  background: #080809;
+}
+.clip-language-trigger,
+.clip-language-trigger .button-content {
+  gap: 7px;
+}
+.clip-language-value {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.language-search {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 0.87rem;
+}
+.language-selection {
+  margin: 14px 0;
+  font-size: 0.85rem;
+}
+.language-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+  max-height: 100px;
+  overflow: auto;
+}
+.language-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--accent);
+  background: var(--raised);
+}
+@media (hover: hover) and (pointer: fine) {
+  :root[data-theme="light"] .button-primary:hover:not(:disabled) {
+    background: #503595;
+    border-color: #503595;
+  }
+}
+@media (min-width: 681px) {
+  .app-header {
+    grid-template-columns: auto minmax(120px, 620px) auto;
+    justify-content: space-between;
+    gap: 16px;
+  }
+}
+@media (min-width: 681px) and (max-width: 1000px) {
+  .wordmark > span:last-child {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .language-search input {
+    font-size: 16px;
+  }
+}
+@media (max-width: 680px) {
+  .app-header {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: 58px 44px;
+    padding-bottom: 8px;
+    gap: 0 8px;
+  }
+  .app-shell {
+    --header-height: 110px;
+    grid-template-rows: var(--header-height) minmax(0, 1fr) auto;
+  }
+  .header-actions {
+    grid-column: 2;
+    grid-row: 1;
+    gap: 2px;
+  }
+  .header-search {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+  }
+  .header-actions .clip-language-trigger {
+    flex-shrink: 0;
+    padding-inline: 8px;
+    font-size: 0.78rem;
+  }
+}
+@media (max-width: 360px) {
+  .app-header {
+    padding-inline: 6px;
+    column-gap: 4px;
+  }
+  .header-brand {
+    gap: 4px;
+  }
+  .header-actions .clip-language-trigger {
+    font-size: 0.72rem;
+  }
+  .clip-language-trigger svg,
+  .clip-language-value {
+    display: none;
+  }
+}
+@media (prefers-contrast: more) {
+  :root[data-theme="light"] {
+    --muted: #464052;
+    --line: #81778f;
+    --theme-muted: #464052;
+    --theme-line: #81778f;
+  }
+}

@@ -71,7 +71,7 @@
     [role="checkbox"],
     [role="combobox"]
   ):focus-visible {
-  outline: 2px solid #bba6ef;
+  outline: 2px solid var(--theme-accent, #bba6ef);
   outline-offset: 3px;
 }
 :root :is(button, input, textarea, select):disabled,
@@ -85,12 +85,12 @@
   opacity: 0.78;
 }
 :root button[aria-pressed="true"] {
-  background-color: #30283d;
-  color: #e5d9ff;
+  background-color: var(--theme-selected-bg, #30283d);
+  color: var(--theme-selected-text, #e5d9ff);
 }
 :root nav a.active {
-  background-color: #2a2637;
-  color: #ddd5ff;
+  background-color: var(--theme-selected-bg, #2a2637);
+  color: var(--theme-selected-text, #ddd5ff);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -106,16 +106,16 @@
     background-image: linear-gradient(#ffffff09, #ffffff09);
   }
   .button:hover:not(:disabled, [aria-disabled="true"]) {
-    border-color: #61566f;
+    border-color: var(--theme-line, #61566f);
     box-shadow: 0 3px 12px #0002;
   }
   .button-primary:hover:not(:disabled) {
     background-color: #e3d7ff;
-    border-color: #e3d7ff;
+    border-color: var(--theme-control-line, #e3d7ff);
     box-shadow: 0 3px 18px #bea0ff25;
   }
   .icon-button:hover:not(:disabled) {
-    background-color: #302a3a;
+    background-color: var(--theme-selected-bg, #302a3a);
   }
   :root
     a[href]:hover:not([aria-disabled="true"]):where(
@@ -129,7 +129,7 @@
         .profile-link
       )
     ) {
-    color: #dfd6ff;
+    color: var(--theme-text, #dfd6ff);
   }
   :root
     :is(
@@ -158,7 +158,7 @@
       [type="checkbox"],
       [type="radio"]
     ) {
-    border-color: #71647f;
+    border-color: var(--theme-control-line, #71647f);
   }
   :root :is(input[type="checkbox"], input[type="radio"]):hover:not(:disabled) {
     box-shadow: 0 0 0 4px #bba6ef20;
@@ -183,12 +183,12 @@
   box-shadow: none;
 }
 :root[data-input="keyboard"] .header-search:focus-within {
-  outline: 2px solid #bba6ef;
+  outline: 2px solid var(--theme-accent, #bba6ef);
   outline-offset: 3px;
 }
 :root[data-input="pointer"] .header-search:focus-within {
   outline: none;
-  border-color: #615773;
+  border-color: var(--theme-line, #615773);
   box-shadow: none;
 }
 
