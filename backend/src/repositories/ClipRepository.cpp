@@ -84,8 +84,6 @@ void append_public_feed_filters(std::ostringstream &sql, const FeedMuteSet *mute
         append_in_quoted(sql, mutes->mute_broadcaster_logins, esc);
         sql << ")";
     }
-    if (mutes->hide_mature)
-        sql << " AND c.classification_source='manual' AND c.is_mature=0";
     for (const auto &kw : mutes->mute_title_keywords) {
         if (kw.empty())
             continue;
@@ -1656,7 +1654,6 @@ bool ClipRepository::upsert_clip_engagement(uint64_t user_id, uint64_t clip_id, 
 
 bool ClipRepository::load_feed_mutes(uint64_t user_id, FeedMuteSet &out) {
     out = {};
-    out.hide_mature = true;
     database::ScopedConnection conn(pool_);
     std::string sql = "SELECT target_key FROM user_feed_blocks WHERE user_id=" + std::to_string(user_id);
     if (database::query(conn.raw(), sql.c_str()))
@@ -1686,18 +1683,16 @@ bool ClipRepository::load_feed_mutes(uint64_t user_id, FeedMuteSet &out) {
     }
     res.reset();
 
-    std::string sql2 = "SELECT hide_mature, mute_keywords, clip_languages FROM user_settings WHERE user_id=" +
+    std::string sql2 = "SELECT mute_keywords, clip_languages FROM user_settings WHERE user_id=" +
                        std::to_string(user_id) + " LIMIT 1";
     if (database::query(conn.raw(), sql2.c_str()) == 0) {
         database::Result res2(mysql_store_result(conn.raw()));
         if (res2) {
             MYSQL_ROW row2 = mysql_fetch_row(res2);
             if (row2) {
-                if (row2[0])
-                    out.hide_mature = (std::stoi(row2[0]) != 0);
-                if (row2[1]) {
+                if (row2[0]) {
                     try {
-                        auto j = nlohmann::json::parse(row2[1]);
+                        auto j = nlohmann::json::parse(row2[0]);
                         if (j.is_array()) {
                             for (const auto &item : j) {
                                 if (!item.is_string())
@@ -1712,9 +1707,9 @@ bool ClipRepository::load_feed_mutes(uint64_t user_id, FeedMuteSet &out) {
                     } catch (...) {
                     }
                 }
-                if (row2[2]) {
+                if (row2[1]) {
                     try {
-                        auto j = nlohmann::json::parse(row2[2]);
+                        auto j = nlohmann::json::parse(row2[1]);
                         if (j.is_array() && !j.empty()) {
                             for (const auto &item : j) {
                                 if (!item.is_string())

@@ -45,7 +45,6 @@ struct FeedMuteSet {
     std::vector<std::string> mute_broadcaster_ids;
     std::vector<std::string> mute_broadcaster_logins;
     /// Из user_settings: скрывать клипы с флагом mature
-    bool hide_mature{true};
     /// Подстроки в заголовке (NOT LIKE), из JSON user_settings.mute_keywords
     std::vector<std::string> mute_title_keywords;
     /// Пусто — все языки; иначе только эти коды (как у Twitch) + пустой язык у старых клипов

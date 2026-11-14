@@ -882,7 +882,6 @@ function Settings() {
 }
 
 function SettingsForm({ data }) {
-  const [mature, setMature] = useState(data.hide_mature !== false);
   const [keywords, setKeywords] = useState(
     (data.mute_keywords || []).join("\n"),
   );
@@ -892,7 +891,6 @@ function SettingsForm({ data }) {
       request("/user/settings", {
         method: "PUT",
         body: {
-          hide_mature: mature,
           mute_keywords: keywords
             .split("\n")
             .map((value) => value.trim())
@@ -914,17 +912,6 @@ function SettingsForm({ data }) {
         save.mutate();
       }}
     >
-      <label className="checkbox-label">
-        <input
-          type="checkbox"
-          checked={mature}
-          onChange={(event) => setMature(event.target.checked)}
-        />
-        <span>
-          Скрывать контент с возрастными ограничениями и неизвестной
-          классификацией
-        </span>
-      </label>
       <label>
         Скрывать клипы со словами
         <textarea

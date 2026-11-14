@@ -10,6 +10,7 @@
 #include "utils/Environment.hpp"
 #include "utils/Errors.hpp"
 #include <atomic>
+#include <algorithm>
 #include <future>
 #include <iostream>
 #include <stdexcept>
@@ -120,11 +121,40 @@ int main() {
         first.twitch_created_at = "2026-11-14T00:00:00Z";
         auto clip = clips.create(first);
         first.twitch_clip_id += "-second";
+        first.classification_source = "unknown";
+        first.is_mature = true;
         first.author_id = b->user.id;
         auto second = clips.create(first);
         require(clips.find_by_id(clip).has_value(), "Single-connection find_by_id deadlocked");
         repositories::ClipFilter filter;
         filter.period = repositories::TimePeriod::All;
+        require(users.save_user_settings(a->user.id, {"unmatched-keyword"}, {"ru"}), "Settings save failed");
+        auto settings = users.get_user_settings(a->user.id);
+        require(!settings.contains("hide_mature") && settings["mute_keywords"][0] == "unmatched-keyword" &&
+                    settings["clip_languages"][0] == "ru", "Retired filter leaked or settings shifted");
+        {
+            database::ScopedConnection connection(pool);
+            database::query(connection.raw(), ("UPDATE user_settings SET hide_mature=1 WHERE user_id=" +
+                            std::to_string(a->user.id)).c_str());
+        }
+        repositories::FeedMuteSet retired_filter;
+        require(clips.load_feed_mutes(a->user.id, retired_filter), "User mutes failed");
+        const auto unclassified = clips.find_filtered(filter, 20, 0, &retired_filter);
+        require(std::any_of(unclassified.begin(), unclassified.end(), [&](const auto &item) {return item.id == second;}),
+                "Legacy strict flag hid an unclassified clip after sign-in");
+        {
+            database::ScopedConnection connection(pool);
+            database::query(connection.raw(), "DELETE FROM schema_migrations WHERE version=8");
+        }
+        database::migrate(pool, utils::env("MIGRATIONS_DIR", "database/migrations"));
+        {
+            database::ScopedConnection connection(pool);
+            database::query(connection.raw(), ("SELECT hide_mature FROM user_settings WHERE user_id=" + std::to_string(a->user.id)).c_str());
+            database::Result result(mysql_store_result(connection.raw()));
+            auto row = mysql_fetch_row(result);
+            require(row && std::string(row[0]) == "0", "Retirement migration did not reset legacy settings");
+        }
+        require(users.save_user_settings(a->user.id, {}, {}), "Settings reset failed");
         require(!clips.find_filtered(filter, 20, 0).empty(), "Feed empty or tags nested acquire");
         require(clips.popular_feed_position(clip, repositories::TimePeriod::All, nullptr, 50).has_value(),
                 "Trend ranks SQL invalid");

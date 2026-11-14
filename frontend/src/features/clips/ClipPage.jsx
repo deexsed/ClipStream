@@ -264,13 +264,6 @@ export default function ClipPage({ feed = false }) {
                   </IconButton>
                 </div>
               </div>
-              {clip.classification_source !== "manual" && (
-                <p className="classification-note muted">
-                  Возрастная классификация этого клипа не проверена. Twitch не
-                  передаёт исторические ограничения клипа; строгий фильтр
-                  доступен в настройках профиля.
-                </p>
-              )}
               {vote.error && <Status error={vote.error} />}
               {message && (
                 <p role="status" className="feedback">
@@ -350,8 +343,7 @@ export default function ClipPage({ feed = false }) {
               >
                 настройки ленты
               </Link>
-              . Строгий фильтр скрывает клипы с непроверенной возрастной
-              классификацией.
+              .
             </>
           ) : (
             ". Попробуйте другую подборку в обзоре."

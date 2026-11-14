@@ -55,7 +55,7 @@ class UserRepository : public IRepository<models::User> {
                                                      const std::vector<uint64_t> &user_ids);
     bool is_following(uint64_t follower_id, uint64_t followed_id);
     nlohmann::json get_user_settings(uint64_t user_id);
-    bool save_user_settings(uint64_t user_id, bool hide_mature, const std::vector<std::string> &mute_keywords,
+    bool save_user_settings(uint64_t user_id, const std::vector<std::string> &mute_keywords,
                             const std::vector<std::string> &clip_languages);
     std::vector<nlohmann::json> get_badge_history(uint64_t user_id, uint32_t limit);
     std::optional<nlohmann::json> get_public_profile(const std::string &username, uint64_t viewer_id);

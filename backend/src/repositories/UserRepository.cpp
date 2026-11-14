@@ -689,10 +689,9 @@ bool UserRepository::is_following(uint64_t follower, uint64_t target) {
 
 nlohmann::json UserRepository::get_user_settings(uint64_t user_id) {
     database::ScopedConnection conn(pool_);
-    nlohmann::json out = {{"hide_mature", true},
-                          {"mute_keywords", nlohmann::json::array()},
+    nlohmann::json out = {{"mute_keywords", nlohmann::json::array()},
                           {"clip_languages", nlohmann::json::array()}};
-    std::string sql = "SELECT hide_mature, mute_keywords, clip_languages FROM user_settings WHERE user_id=" +
+    std::string sql = "SELECT mute_keywords, clip_languages FROM user_settings WHERE user_id=" +
                       std::to_string(user_id) + " LIMIT 1";
     if (database::query(conn.raw(), sql.c_str()) != 0)
         return out;
@@ -701,19 +700,17 @@ nlohmann::json UserRepository::get_user_settings(uint64_t user_id) {
         return out;
     MYSQL_ROW row = mysql_fetch_row(res);
     if (row) {
-        if (row[0])
-            out["hide_mature"] = (std::stoi(row[0]) != 0);
-        if (row[1]) {
+        if (row[0]) {
             try {
-                auto j = nlohmann::json::parse(row[1]);
+                auto j = nlohmann::json::parse(row[0]);
                 if (j.is_array())
                     out["mute_keywords"] = std::move(j);
             } catch (...) {
             }
         }
-        if (row[2]) {
+        if (row[1]) {
             try {
-                auto j = nlohmann::json::parse(row[2]);
+                auto j = nlohmann::json::parse(row[1]);
                 if (j.is_array())
                     out["clip_languages"] = std::move(j);
             } catch (...) {
@@ -724,7 +721,7 @@ nlohmann::json UserRepository::get_user_settings(uint64_t user_id) {
     return out;
 }
 
-bool UserRepository::save_user_settings(uint64_t user_id, bool hide_mature,
+bool UserRepository::save_user_settings(uint64_t user_id,
                                         const std::vector<std::string> &mute_keywords,
                                         const std::vector<std::string> &clip_languages) {
     database::ScopedConnection conn(pool_);
@@ -758,10 +755,10 @@ bool UserRepository::save_user_settings(uint64_t user_id, bool hide_mature,
     const std::string jdump = esc(arr.dump());
     const std::string jlang = esc(lang_arr.dump());
     std::string sql =
-        "INSERT INTO user_settings (user_id, hide_mature, mute_keywords, clip_languages) VALUES (" +
-        std::to_string(user_id) + "," + std::string(hide_mature ? "1" : "0") + ",'" + jdump + "','" + jlang +
+        "INSERT INTO user_settings (user_id, mute_keywords, clip_languages) VALUES (" +
+        std::to_string(user_id) + ",'" + jdump + "','" + jlang +
         "') "
-        "ON DUPLICATE KEY UPDATE hide_mature=VALUES(hide_mature), mute_keywords=VALUES(mute_keywords), "
+        "ON DUPLICATE KEY UPDATE mute_keywords=VALUES(mute_keywords), "
         "clip_languages=VALUES(clip_languages)";
     return database::query(conn.raw(), sql.c_str()) == 0;
 }

@@ -12,7 +12,7 @@
 #include <sstream>
 namespace clipstream::database {
 namespace {
-constexpr unsigned expected_version = 7;
+constexpr unsigned expected_version = 8;
 std::vector<std::string> statements(const std::string &input) {
     std::string clean;
     std::istringstream lines(input);

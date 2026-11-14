@@ -42,7 +42,6 @@ const repositories::FeedMuteSet *resolve_mutes(repositories::ClipRepository &rep
     if (!clip_langs_q.has_value())
         return nullptr;
     storage = {};
-    storage.hide_mature = false;
     storage.only_broadcast_langs = *clip_langs_q;
     return &storage;
 }

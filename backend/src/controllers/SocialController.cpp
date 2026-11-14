@@ -317,7 +317,6 @@ server::Response SocialController::handle_user_settings_get(const server::Reques
 server::Response SocialController::handle_user_settings_put(const server::Request &req) {
     if (req.user_id == 0)
         return unauthorized();
-    const bool hide_mature = req.body.value("hide_mature", true);
     std::vector<std::string> keywords;
     if (req.body.contains("mute_keywords") && req.body["mute_keywords"].is_array()) {
         for (const auto &item : req.body["mute_keywords"]) {
@@ -334,7 +333,7 @@ server::Response SocialController::handle_user_settings_put(const server::Reques
             clip_langs.push_back(item.get<std::string>());
         }
     }
-    if (!users_.save_user_settings(req.user_id, hide_mature, keywords, clip_langs))
+    if (!users_.save_user_settings(req.user_id, keywords, clip_langs))
         return {400, {{"error", "Failed to save settings"}}};
     clips_.invalidate_feed_cache_for_user(req.user_id);
     return {200, users_.get_user_settings(req.user_id)};
