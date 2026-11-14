@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Compass,
   Flame,
+  Zap,
   Grid2X2,
   Languages,
   LogOut,
@@ -48,6 +49,7 @@ const links = [
   { to: "/trends", label: "В тренде", icon: Flame },
   { to: "/categories", label: "Категории", icon: Grid2X2 },
   { to: "/feed", label: "Смотреть", icon: Play },
+  { to: "/cliprush", label: "ClipRush", icon: Zap },
 ];
 
 export default function Shell() {

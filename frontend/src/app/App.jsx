@@ -5,6 +5,7 @@ import { Status } from "../shared/ui/Primitives";
 
 const Discover = lazy(() => import("../features/discover/DiscoverPage"));
 const Clip = lazy(() => import("../features/clips/ClipPage"));
+const ClipRush = lazy(() => import("../features/clips/ClipRushPage"));
 const Profile = lazy(() => import("../features/social/ProfilePage"));
 const Following = lazy(() => import("../features/social/FollowingPage"));
 const Console = lazy(() => import("../features/admin/ConsolePage"));
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="trends" element={<Discover mode="trends" />} />
           <Route path="discover" element={<Navigate to="/trends" replace />} />
           <Route path="feed" element={<Clip feed />} />
+          <Route path="cliprush" element={<ClipRush />} />
           <Route path="following" element={<Following />} />
           <Route path="clip/:id" element={<Clip />} />
           <Route path="u/:username" element={<Profile />} />

@@ -2214,3 +2214,328 @@ h3 {
     font-size: 0.7rem;
   }
 }
+.rush {
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  background: #09090c;
+}
+.rush-body {
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  --rush-comments-width: clamp(300px, 26vw, 380px);
+}
+.rush-body.has-comments {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--rush-comments-width);
+}
+.rush-body.has-comments .rush-scroll {
+  grid-column: 1;
+  min-width: 0;
+}
+.rush:has(.has-comments) .rush-heading {
+  right: clamp(300px, 26vw, 380px);
+}
+.rush-body.has-comments .rush-navigation {
+  right: calc(var(--rush-comments-width) + 16px);
+}
+.rush-comments {
+  grid-column: 2;
+  grid-row: 1;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px 16px;
+  background: #17171d;
+  border-left: 1px solid #33313d;
+}
+.rush-comments-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.rush-comments-heading h2 {
+  font-size: 1.15rem;
+  margin: 0;
+}
+.rush-comment-title {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+  margin: 8px 0 24px;
+}
+.rush-comments .comments {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.rush-comments .comments > .section-label > h2 {
+  display: none;
+}
+.rush-comments .comment {
+  padding: 14px 0;
+}
+.rush-comments-sheet {
+  position: fixed;
+  inset: auto 0 0;
+  margin: 0;
+  width: 100%;
+  max-width: none;
+  max-height: 78dvh;
+  height: 70dvh;
+  min-height: 48dvh;
+  border-radius: 20px 20px 0 0;
+  padding: 28px 18px calc(20px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  transform: translateY(var(--sheet-drag, 0px));
+  transition: transform 160ms var(--ease);
+}
+.rush-comments-sheet[open] {
+  animation: none;
+}
+.rush-sheet-grip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  touch-action: none;
+  cursor: grab;
+}
+.rush-sheet-grip::after {
+  content: "";
+  width: 36px;
+  height: 4px;
+  border-radius: 4px;
+  background: #64616f;
+}
+.rush-comments-sheet .comments {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+.rush-comments-sheet .comments > .section-label > h2 {
+  display: none;
+}
+.rush-heading {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 24px;
+  pointer-events: none;
+  background: linear-gradient(#09090cf2, #09090c00);
+}
+.rush-heading h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.15rem;
+  margin: 0;
+}
+.rush-heading h1 svg {
+  color: var(--accent);
+}
+.rush-heading label {
+  pointer-events: auto;
+}
+.rush-heading select {
+  max-width: 165px;
+  background: #1c1c24;
+  border: 1px solid #3a3944;
+  border-radius: 20px;
+  padding: 8px 12px;
+  color: inherit;
+}
+.rush-scroll {
+  height: 100%;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+}
+.rush-scroll::-webkit-scrollbar {
+  display: none;
+}
+.rush-slide {
+  height: 100%;
+  min-height: 640px;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  padding: 62px 72px 22px 24px;
+  display: flex;
+  justify-content: center;
+  contain: layout paint;
+}
+.rush-card {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(300px, 1fr) auto;
+  gap: 18px;
+}
+.rush-media {
+  container-type: size;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+.rush-media .player-container {
+  width: min(100cqw, calc(100cqh * 16 / 9));
+  height: min(100cqh, calc(100cqw * 9 / 16));
+  min-height: 300px;
+  max-width: 100%;
+  border-color: #34323e;
+}
+.rush-media .preroll {
+  width: min(100cqw, calc((100cqh - 70px) * 16 / 9));
+  max-height: 100%;
+  overflow: auto;
+}
+.rush-footer {
+  width: min(100%, calc((100dvh - 340px) * 16 / 9));
+  margin-inline: auto;
+  flex-shrink: 0;
+  padding-bottom: 4px;
+}
+.rush-author {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: fit-content;
+  max-width: 100%;
+}
+.rush-author strong {
+  overflow-wrap: anywhere;
+}
+.rush-author .avatar {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+.rush-footer h2 {
+  font-size: 1.2rem;
+  line-height: 1.4;
+  margin: 12px 0 8px;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rush-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.rush-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.rush-actions [aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: #30283f;
+}
+.rush-actions .text-link {
+  margin-left: auto;
+}
+.rush-idle {
+  justify-content: center;
+  color: var(--muted);
+}
+.rush-idle img {
+  width: 100%;
+  aspect-ratio: 16/9;
+  object-fit: contain;
+  border-radius: 12px;
+  opacity: 0.6;
+}
+.rush-navigation {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 2;
+}
+.rush-navigation .icon-button {
+  width: 44px;
+  height: 44px;
+  background: #24232d;
+  border: 1px solid #3a3945;
+}
+.rush-navigation > span {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.rush-end {
+  min-height: 130px;
+  padding: 28px 24px;
+  text-align: center;
+  color: var(--muted);
+  scroll-snap-align: end;
+}
+.rush-status {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  padding: 64px 24px;
+}
+@media (max-width: 680px) {
+  .rush-slide {
+    padding: 62px 0 16px;
+    min-height: 640px;
+  }
+  .rush-heading {
+    padding: 14px;
+  }
+  .rush-footer {
+    padding: 0 14px;
+  }
+  .rush-card {
+    gap: 12px;
+  }
+  .rush-media .player-container {
+    border-radius: 0;
+  }
+  .rush-navigation {
+    right: 12px;
+    top: 76px;
+    transform: none;
+    flex-direction: row;
+    gap: 5px;
+  }
+  .rush-navigation .icon-button {
+    width: 38px;
+    height: 38px;
+    min-height: 38px;
+  }
+  .rush-navigation > span {
+    display: none;
+  }
+  .rush-actions .button {
+    padding-inline: 10px;
+  }
+  .bottom-navigation > a {
+    min-width: 0;
+    padding-inline: 6px;
+  }
+}

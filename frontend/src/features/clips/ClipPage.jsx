@@ -374,7 +374,7 @@ export default function ClipPage({ feed = false }) {
   );
 }
 
-export function TwitchClip({ clip }) {
+export function TwitchClip({ clip, autoplay = false, muted = false }) {
   const container = useRef(null);
   const [wideEnough, setWideEnough] = useState(false);
   useEffect(() => {
@@ -385,7 +385,7 @@ export function TwitchClip({ clip }) {
     return () => observer.disconnect();
   }, []);
   const url = `https://clips.twitch.tv/${encodeURIComponent(clip.twitch_clip_id || "")}`;
-  const embed = `https://clips.twitch.tv/embed?${queryString({ clip: clip.twitch_clip_id, parent: window.location.hostname, autoplay: false })}`;
+  const embed = `https://clips.twitch.tv/embed?${queryString({ clip: clip.twitch_clip_id, parent: window.location.hostname, autoplay, muted })}`;
   return (
     <div ref={container} className="player-container">
       {wideEnough && clip.twitch_clip_id ? (
