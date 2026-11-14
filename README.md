@@ -1,39 +1,50 @@
 # ClipStream
 
-Агрегатор клипов Twitch: лента, тренды, категории, профили, комментарии, друзья.
+Клипы Twitch, единые профили каналов и пользователей, отслеживание авторов, друзья и обсуждения. Авторизация — **только Twitch OAuth**.
 
-## Стек
+## Локальный запуск
 
-React 18, Vite, Tailwind, Zustand | C++20, Boost.Beast | MySQL 8, Redis 7 | Docker, Nginx
+Требуются Docker Desktop с Linux containers и Docker Compose; для генератора секретов — PowerShell 7.
 
-## Запуск
-
-```bash
-cp .env.example .env
-docker compose up --build -d
+```powershell
+Copy-Item .env.example .env
+pwsh deploy/init-local.ps1
+# Заполнить .env и файл temp/secrets/twitch_client_secret.
+docker compose --env-file .env up --build -d
 ```
 
-В `.env` задать `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `JWT_SECRET`, пароли MySQL.  
-`TWITCH_REDIRECT_URI=http://localhost/auth/callback` - тот же URL в [консоли Twitch](https://dev.twitch.tv/console/apps).
+Сайт: http://localhost. Наружу опубликован только HTTP на `127.0.0.1:80`; MySQL, Redis и API доступны внутри Docker network. Локальная конфигурация не является кластером высокой доступности.
 
-Открыть http://localhost .
+Для Twitch укажите Client ID в `.env`, Client Secret в отдельном файле секретов и зарегистрируйте точный `TWITCH_REDIRECT_URI` в [Twitch Developer Console](https://dev.twitch.tv/console/apps). Пароли БД, Redis, JWT и gateway proof создаёт `deploy/init-local.ps1`; они не входят в образ и Git. Генератор не перезаписывает существующие секреты.
 
-Порты на хосте: 80 (сайт), 8080 (backend), 3000 (frontend), 3307 (MySQL), 6379 (Redis).
+Документы некоммерческого сервиса встроены в `/legal`: условия, политика, согласие, браузерное хранение и условия рекламного модуля. По вашему решению реквизиты пока оставлены полями для заполнения; они не блокируют технический вход. Перед публичным запуском заполните `LEGAL_OPERATOR_NAME`, `LEGAL_CONTACT_EMAIL` и проверьте документы с учётом юрисдикции. Переменные `LEGAL_*_URL` позволяют заменить встроенную редакцию опубликованными документами. При изменении условий обновляйте `LEGAL_CONSENT_VERSION`.
 
-Проверка:
+При **изначально пустой базе** первый подтверждённый вход Twitch-аккаунта `deexsd` получает роль администратора. Другие пользователи могут входить раньше и не получают эту роль. Сервер разрешает login `deexsd` через Helix и сравнивает Twitch ID; локальное имя профиля или email не дают административных прав. Для существующей непустой базы автоматическое назначение отключено. Дальнейшие роли назначаются в `/admin`.
 
-```bash
-curl http://localhost/api/health
+```powershell
+Invoke-RestMethod http://localhost/api/health/ready
+# Независимые API и frontend replicas на одном Docker host:
+docker compose --env-file .env up -d --scale api=2 --scale frontend=2 --scale worker=2
 ```
 
-Если после перезапуска backend ответы `/api/*` дают 502:
+## Разработка и проверка
 
-```bash
-docker compose up -d --force-recreate --no-deps nginx
+Frontend: React 18, React Router 7, TanStack Query, Vite 8, CSS. Node.js 24.22.1 используется в Docker. Шрифт Inter поставляется локально. Backend: C++20, Boost.Beast/Asio, MySQL 8, Redis 7.
+
+```powershell
+cd frontend
+npm ci
+npm test
+npm run build
+npm run dev
 ```
 
-## Twitch OAuth
+Сборка frontend записывается в `frontend/build`; backend — в `backend/build`; временные файлы — в `temp` соответствующего проекта. Dev server слушает `127.0.0.1:3000`, проксирует `/api` на локальный edge `127.0.0.1:80`. Для другого edge задайте `API_PROXY_TARGET`.
 
-1. Redirect URL в Twitch: `http://localhost/auth/callback`
-2. Вход на сайте через Twitch, callback на `/auth/callback`
-3. `LEGAL_CONSENT_VERSION` в `frontend/src/constants/legalConsent.js` и `kLegalConsentVersion` в `backend/src/controllers/AuthController.cpp` должны совпадать
+Backend собирается через `backend/Dockerfile`; CMake включает CTest. DB/Redis integration tests требуют отдельной тестовой среды и не запускаются против production DB. Детали — в [отчёте проверки](docs/validation.md).
+
+- [Архитектура и контракты](docs/architecture.md)
+- [Настройка Twitch OAuth](docs/twitch-oauth.md)
+- [Документы и некоммерческий запуск](docs/legal-operations.md)
+- [Развёртывание и масштабирование](docs/deployment.md)
+- [Результаты проверки и ограничения](docs/validation.md)
