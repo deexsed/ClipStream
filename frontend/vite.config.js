@@ -1,16 +1,19 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import licenseNotices from "./scripts/license-notices.mjs";
 
 export default defineConfig({
-  plugins: [react()],
+  base: process.env.ASSET_BASE_URL || "/",
+  plugins: [react(), licenseNotices()],
+  build: { outDir: "build", emptyOutDir: true },
+  test: { environment: "jsdom", setupFiles: ["./tests/setup.js"] },
   server: {
     port: 3000,
-    host: '0.0.0.0',
+    host: "127.0.0.1",
     proxy: {
-      '/api': {
-        target: 'http://localhost:8080',
+      "/api": {
+        target: process.env.API_PROXY_TARGET || "http://127.0.0.1:80",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
   },
