@@ -23,6 +23,14 @@ namespace clipstream::repositories {
 namespace {
 using namespace feed_sql;
 
+void append_game_filter(std::ostringstream &sql, const std::vector<uint64_t> &ids) {
+    if (ids.empty())
+        return;
+    sql << " AND c.game_id IN (";
+    append_in_numeric(sql, ids);
+    sql << ") ";
+}
+
 std::vector<std::string> split_terms(const std::string &query) {
     std::istringstream ss(query);
     std::vector<std::string> terms;
@@ -302,8 +310,7 @@ std::vector<models::Clip> ClipRepository::find_filtered(const ClipFilter &filter
 
     sql << " WHERE 1=1";
 
-    if (filter.game_id > 0)
-        sql << " AND c.game_id=" << filter.game_id;
+    append_game_filter(sql, filter.game_ids);
 
     if (!filter.tag.empty())
         sql << " AND t.name='" << esc(filter.tag) << "'";
@@ -343,7 +350,7 @@ std::vector<models::Clip> ClipRepository::find_filtered(const ClipFilter &filter
         break;
     case TimePeriod::All:
         // For category/channel/search we should not hide low-view clips.
-        if (filter.game_id > 0 || !filter.broadcaster_name.empty() || !filter.search.empty())
+        if (!filter.game_ids.empty() || !filter.broadcaster_name.empty() || !filter.search.empty())
             sql << " AND c.view_count >= 2";
         else
             sql << " AND c.view_count >= 50";
@@ -1244,8 +1251,7 @@ std::vector<models::Clip> ClipRepository::find_personalized(const ClipFilter &fi
         body << "FROM clips c LEFT JOIN games g ON c.game_id=g.id " << k_clip_platform_aggr_join;
     }
     body << "WHERE 1=1 ";
-    if (filter.game_id > 0)
-        body << "AND c.game_id=" << filter.game_id << " ";
+    append_game_filter(body, filter.game_ids);
     if (!filter.tag.empty())
         body << "AND t.name='" << esc(filter.tag) << "' ";
     if (!filter.broadcaster_name.empty())
@@ -1266,7 +1272,7 @@ std::vector<models::Clip> ClipRepository::find_personalized(const ClipFilter &fi
              << " >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY) AND c.view_count >= 30 ";
         break;
     case TimePeriod::All:
-        if (filter.game_id > 0 || !filter.broadcaster_name.empty() || !filter.search.empty())
+        if (!filter.game_ids.empty() || !filter.broadcaster_name.empty() || !filter.search.empty())
             body << "AND c.view_count >= 2 ";
         else
             body << "AND c.view_count >= 50 ";

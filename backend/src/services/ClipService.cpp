@@ -44,7 +44,10 @@ ClipService::ClipService(repositories::ClipRepository &clip_repo, repositories::
 
 std::string ClipService::cache_key(const repositories::ClipFilter &f, uint32_t limit, uint32_t offset,
                                    uint64_t user_id) {
-    const auto identity = json::array({f.game_id, static_cast<int>(f.sort), static_cast<int>(f.period), f.tag,
+    const auto category = f.game_ids.size() > 1
+                              ? json(f.game_ids)
+                              : json(f.game_ids.empty() ? 0 : f.game_ids.front());
+    const auto identity = json::array({category, static_cast<int>(f.sort), static_cast<int>(f.period), f.tag,
                                        f.broadcaster_name, f.search, limit, offset, user_id})
                               .dump();
     unsigned char digest[SHA256_DIGEST_LENGTH];

@@ -31,7 +31,7 @@ struct ExistingClipRef {
 };
 
 struct ClipFilter {
-    uint64_t game_id{};
+    std::vector<uint64_t> game_ids;
     ClipSort sort{ClipSort::Popular};
     TimePeriod period{TimePeriod::Today};
     std::string search;

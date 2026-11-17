@@ -2,17 +2,39 @@
 #include "models/User.hpp"
 #include "utils/Utf8.hpp"
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
 #include <optional>
 #include <sstream>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
 namespace clipstream::controllers {
 
 namespace {
+
+bool parse_game_ids(std::string_view input, size_t limit, std::vector<uint64_t> &ids) {
+    for (size_t count = 0; count < limit; ++count) {
+        auto comma = input.find(',');
+        auto token = input.substr(0, comma);
+        if (token.empty())
+            return false;
+        uint64_t id{};
+        const char *end = token.data() + token.size();
+        auto [ptr, ec] = std::from_chars(token.data(), end, id);
+        if (ec != std::errc{} || ptr != end || id == 0)
+            return false;
+        if (std::find(ids.begin(), ids.end(), id) == ids.end())
+            ids.push_back(id);
+        if (comma == std::string_view::npos)
+            return true;
+        input.remove_prefix(comma + 1);
+    }
+    return false;
+}
 
 std::optional<std::vector<std::string>> parse_clip_langs_query(const server::Request &req) {
     auto it = req.query.find("clip_langs");
@@ -82,11 +104,19 @@ void ClipController::register_routes(server::Router &router) {
 server::Response ClipController::handle_get_feed(const server::Request &req) {
     repositories::ClipFilter filter;
 
-    auto it = req.query.find("game_id");
-    if (it != req.query.end())
-        filter.game_id = std::stoull(it->second);
+    const auto single_game = req.query.find("game_id");
+    const auto multiple_games = req.query.find("game_ids");
+    if (multiple_games != req.query.end()) {
+        if (single_game != req.query.end() ||
+            !parse_game_ids(multiple_games->second, 20, filter.game_ids))
+            return {400, {{"error", "game_ids must contain 1 to 20 positive category IDs"}}};
+    } else if (single_game != req.query.end() &&
+               !parse_game_ids(single_game->second, 1, filter.game_ids)) {
+        return {400, {{"error", "game_id must be a positive category ID"}}};
+    }
+    std::sort(filter.game_ids.begin(), filter.game_ids.end());
 
-    it = req.query.find("sort");
+    auto it = req.query.find("sort");
     if (it != req.query.end()) {
         if (it->second == "recent")
             filter.sort = repositories::ClipSort::Recent;
@@ -131,7 +161,7 @@ server::Response ClipController::handle_get_feed(const server::Request &req) {
         req.query.find("personalized") != req.query.end() && req.query.at("personalized") == "1";
     // Personalization should only shape the generic home feed.
     // For contextual feeds (category/channel/tag/search), explicit filters must take precedence.
-    if (filter.game_id > 0 || !filter.broadcaster_name.empty() || !filter.tag.empty() ||
+    if (!filter.game_ids.empty() || !filter.broadcaster_name.empty() || !filter.tag.empty() ||
         !filter.search.empty()) {
         personalized = false;
     }
