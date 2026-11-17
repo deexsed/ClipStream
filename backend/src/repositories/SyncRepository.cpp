@@ -37,6 +37,30 @@ void SyncRepository::schedule(int64_t now, int interval_seconds) {
     exec(c, "INSERT IGNORE INTO "
             "clip_sync_games(game_id,fresh_until,history_until) SELECT id," +
                 std::to_string(end - 900) + "," + std::to_string(end - 900) + " FROM games");
+    // A long outage is recovery work, not live polling. Lock games before windows,
+    // in the same order as page commits, and preserve every durable checkpoint.
+    const auto live_floor = end - 3600;
+    const auto expired = "phase='fresh' AND start_epoch<" + std::to_string(live_floor);
+    exec(c, "SELECT s.game_id FROM clip_sync_games s WHERE EXISTS "
+            "(SELECT 1 FROM clip_sync_windows w WHERE w.game_id=s.game_id AND w." +
+                expired + ") ORDER BY s.game_id FOR UPDATE");
+    {
+        database::Result locked_games(mysql_store_result(c));
+    }
+    exec(c,
+         "INSERT INTO clip_sync_windows(game_id,phase,start_epoch,end_epoch,`cursor`,pages,raw_count,"
+         "is_partition,retry_at) SELECT f.game_id,'recovery',f.start_epoch,f.end_epoch,f.`cursor`,f.pages,"
+         "f.raw_count,f.is_partition,f.retry_at FROM clip_sync_windows f WHERE f.phase='fresh' AND "
+         "f.start_epoch<" +
+             std::to_string(live_floor) +
+             " ON DUPLICATE KEY UPDATE "
+             "`cursor`=IF(VALUES(pages)>clip_sync_windows.pages,VALUES(`cursor`),clip_sync_windows.`cursor`),"
+             "raw_count=IF(VALUES(pages)>clip_sync_windows.pages,VALUES(raw_count),clip_sync_windows.raw_"
+             "count),"
+             "is_partition=GREATEST(clip_sync_windows.is_partition,VALUES(is_partition)),"
+             "retry_at=GREATEST(clip_sync_windows.retry_at,VALUES(retry_at)),"
+             "pages=GREATEST(clip_sync_windows.pages,VALUES(pages))");
+    exec(c, "DELETE FROM clip_sync_windows WHERE " + expired);
     struct Game {
         uint64_t id;
         int64_t fresh, history;
@@ -66,6 +90,12 @@ void SyncRepository::schedule(int64_t now, int interval_seconds) {
         select_games(false, 12 - games.size());
     for (const auto& g : games) {
         if (g.fresh < end) {
+            auto start = g.fresh - 900;
+            if (start < live_floor) {
+                const auto live_start = end - 900;
+                add_window(c, g.id, "recovery", start, live_start);
+                start = live_start;
+            }
             // Merge unstarted polls; preserve smaller partitions created to escape the Helix cap.
             exec(c, "SELECT id FROM clip_sync_windows WHERE game_id=" + std::to_string(g.id) +
                         " AND phase='fresh' AND pages=0 AND is_partition=0 ORDER BY id LIMIT 1 FOR UPDATE");
@@ -77,7 +107,7 @@ void SyncRepository::schedule(int64_t now, int interval_seconds) {
                 exec(c, "UPDATE clip_sync_windows SET end_epoch=GREATEST(end_epoch," + std::to_string(end) +
                             ") WHERE id=" + std::to_string(head_id));
             else
-                add_window(c, g.id, "fresh", g.fresh - 900, end);
+                add_window(c, g.id, "fresh", start, end);
         }
         exec(c, "UPDATE clip_sync_games SET fresh_until=GREATEST(fresh_until," + std::to_string(end) +
                     "),scheduled_at=" + std::to_string(now) + " WHERE game_id=" + std::to_string(g.id));

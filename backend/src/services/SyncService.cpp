@@ -184,15 +184,24 @@ void SyncService::sync_clips_all_phases() {
              ++lane) {
             const auto turn = polling_turn_;
             polling_turn_ = (polling_turn_ + 1) % 20;
-            // Once eligible windows are five minutes behind, spend three quarters
-            // of fresh slots on oldest work; keep live-head and history progress.
-            const bool history_slot = (catching_up ? turn == 19 : turn % 10 == 9) && !history_deferred;
+            // Live heads have at least 80% of dispatch slots (95% when overdue).
+            // Recovery preserves the five-view contract of missed fresh polling;
+            // ordinary history alone uses its existing 24-request sub-budget.
+            const bool backfill_slot = catching_up ? turn == 19 : turn % 5 == 4;
             const bool oldest = catching_up ? turn % 4 != 0 : turn % 4 == 3;
-            auto window = repo.next(history_slot ? "history" : "fresh", oldest, 0, excluded);
-            if (!window && history_slot)
-                window = repo.next("fresh", oldest, 0, excluded);
-            if (!window && !history_deferred)
-                window = repo.next("history", false, 0, excluded);
+            auto backfill = [&]() -> std::optional<repositories::SyncWindow> {
+                const bool history_first = backfill_turn_++ % 4 == 3;
+                auto next = history_first && !history_deferred ? repo.next("history", false, 0, excluded)
+                                                               : repo.next("recovery", false, 0, excluded);
+                if (!next)
+                    next = history_first
+                               ? repo.next("recovery", false, 0, excluded)
+                               : (history_deferred ? std::nullopt : repo.next("history", false, 0, excluded));
+                return next;
+            };
+            auto window = backfill_slot ? backfill() : repo.next("fresh", oldest, 0, excluded);
+            if (!window)
+                window = backfill_slot ? repo.next("fresh", oldest, 0, excluded) : backfill();
             if (!window) {
                 if (jobs.empty())
                     retry_delay_seconds_ = 5;

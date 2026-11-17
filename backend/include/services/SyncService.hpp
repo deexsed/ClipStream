@@ -53,6 +53,7 @@ class SyncService {
     int retry_delay_seconds_{1};
     std::chrono::steady_clock::time_point history_resume_at_{};
     unsigned polling_turn_{0};
+    unsigned backfill_turn_{0};
     std::mutex sync_mutex_;
     CacheService* cache_{nullptr};
 
