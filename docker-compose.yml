@@ -156,6 +156,8 @@ services:
       retries: 5
   nginx:
     image: nginx:alpine@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72
+    environment:
+      TWITCH_IMAGE_DNS_RESOLVERS: ${TWITCH_IMAGE_DNS_RESOLVERS:-127.0.0.11}
     restart: always
     user: 101:101
     entrypoint: [sh, /app/start-edge.sh]
