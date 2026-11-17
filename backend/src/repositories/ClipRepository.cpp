@@ -1812,6 +1812,11 @@ std::vector<nlohmann::json> ClipRepository::list_content_reports(uint32_t limit,
             {"reason", row[4] ? std::string(row[4]) : ""},
             {"status", row[5] ? std::string(row[5]) : ""},
             {"created_at", row[6] ? std::string(row[6]) : ""},
+            {"reporter_username", row[7] ? row[7] : ""},
+            {"clip_id", row[8] ? nlohmann::json(std::stoull(row[8])) : nlohmann::json(nullptr)},
+            {"subject_user_id", row[9] ? nlohmann::json(std::stoull(row[9])) : nlohmann::json(nullptr)},
+            {"comment_content", row[10] ? row[10] : ""},
+            {"clip_title", row[11] ? row[11] : ""},
         };
         out.push_back(std::move(j));
     }
@@ -1846,11 +1851,6 @@ void ClipRepository::log_compliance(const std::string &action, uint64_t clip_id,
 
 std::vector<nlohmann::json> ClipRepository::get_user_recent_view_activity(uint64_t user_id, uint32_t limit,
                                                                           uint32_t offset) {
-            {"reporter_username", row[7] ? row[7] : ""},
-            {"clip_id", row[8] ? nlohmann::json(std::stoull(row[8])) : nlohmann::json(nullptr)},
-            {"subject_user_id", row[9] ? nlohmann::json(std::stoull(row[9])) : nlohmann::json(nullptr)},
-            {"comment_content", row[10] ? row[10] : ""},
-            {"clip_title", row[11] ? row[11] : ""},
     database::ScopedConnection conn(pool_);
     std::ostringstream sql;
     sql << "SELECT vh.viewed_at, c.id, c.title, c.thumbnail_url, c.broadcaster_name, c.twitch_clip_id "
