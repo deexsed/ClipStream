@@ -58,6 +58,16 @@ function swipe(element, from, to, { cancel = false, multiple = false } = {}) {
 }
 
 describe("sidebar navigation", () => {
+  it("keeps legal documents reachable from the mobile menu", () => {
+    mount(true);
+    fireEvent.click(screen.getByRole("button", { name: /боковую панель/ }));
+    const menu = screen.getByRole("dialog", { name: "Навигация" });
+    const legal = within(menu).getByRole("link", {
+      name: "Документы и контакты",
+    });
+    expect(legal.getAttribute("href")).toBe("/legal");
+  });
+
   it("does not turn a mobile vertical scroll into a closing swipe", () => {
     const view = mount(true);
     fireEvent.click(
@@ -270,9 +280,9 @@ describe("sidebar navigation", () => {
     const details = container.querySelector(".sidebar-details");
     expect(details.hasAttribute("inert")).toBe(true);
     expect(details.getAttribute("aria-hidden")).toBe("true");
-    expect(
-      screen.queryByRole("link", { name: "Документы и контакты" }),
-    ).toBeNull();
+    const legal = screen.getByRole("link", { name: "Документы и контакты" });
+    expect(legal.getAttribute("href")).toBe("/legal");
+    expect(legal.closest("[inert]")).toBeNull();
     fireEvent.click(
       screen.getByRole("button", { name: "Развернуть боковую панель" }),
     );

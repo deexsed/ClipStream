@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import Shell from "./Shell";
+import { PublicPageLayout } from "./SiteFooter";
 import { Status } from "../shared/ui/Primitives";
 
 const Discover = lazy(() => import("../features/discover/DiscoverPage"));
@@ -18,10 +19,12 @@ export default function App() {
     <Suspense fallback={<Status loading />}>
       <Routes>
         <Route element={<Shell />}>
-          <Route index element={<Discover />} />
-          <Route path="categories" element={<Discover mode="categories" />} />
-          <Route path="category/:id" element={<Discover mode="category" />} />
-          <Route path="trends" element={<Discover mode="trends" />} />
+          <Route element={<PublicPageLayout />}>
+            <Route index element={<Discover />} />
+            <Route path="categories" element={<Discover mode="categories" />} />
+            <Route path="category/:id" element={<Discover mode="category" />} />
+            <Route path="trends" element={<Discover mode="trends" />} />
+          </Route>
           <Route path="discover" element={<Navigate to="/trends" replace />} />
           <Route path="feed" element={<Clip feed />} />
           <Route path="cliprush" element={<ClipRush />} />

@@ -568,15 +568,26 @@ select {
 .subscriptions > .text-link {
   padding: 4px 12px;
 }
-.sidebar-footer {
+.sidebar-legal {
   margin-top: auto;
   padding: 32px 12px 0;
   font-size: 0.75rem;
   color: var(--theme-muted, #9999a5);
 }
-.sidebar-footer p {
-  margin: 18px 0 3px;
-  color: var(--theme-muted, #c2c2cc);
+.sidebar-legal > a {
+  min-height: 44px;
+  font-size: 0.85rem;
+}
+.sidebar-legal > a.active {
+  background: var(--theme-selected-bg, #2a2637);
+  color: var(--theme-selected-text, #ddd5ff);
+}
+.sidebar-compact .sidebar-legal > a {
+  justify-content: center;
+  padding-inline: 0;
+}
+.sidebar-compact .sidebar-legal > a > span {
+  display: none;
 }
 .main-content {
   grid-row: 2;

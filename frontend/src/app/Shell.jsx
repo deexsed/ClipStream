@@ -11,6 +11,7 @@ import {
   Bell,
   ChevronDown,
   Compass,
+  FileText,
   Flame,
   Zap,
   Grid2X2,
@@ -243,12 +244,17 @@ function ShellContent() {
               </>
             )}
           </div>
-          <div className="sidebar-footer">
-            <Link to="/legal">Документы и контакты</Link>
-            <p>Стримы заканчиваются - моменты остаются</p>
-            <small>© {new Date().getFullYear()} ClipStream</small>
-          </div>
         </div>
+      </div>
+      <div className="side-group sidebar-legal">
+        <NavLink
+          to="/legal"
+          title="Документы и контакты"
+          aria-label="Документы и контакты"
+        >
+          <FileText size={18} aria-hidden="true" />
+          <span>Документы и контакты</span>
+        </NavLink>
       </div>
     </div>
   );
