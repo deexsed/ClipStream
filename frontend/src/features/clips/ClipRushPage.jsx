@@ -1,10 +1,15 @@
+import { recordCategoryUse } from "../../shared/categoryHistory";
+import ShareDialog from "./ShareDialog";
+import useClipVote from "./useClipVote";
+import TwitchImage from "../../shared/ui/TwitchImage";
+import { Field } from "../../shared/ui/FormControls";
 import { useRecommendationFeed } from "../../shared/api/recommendations";
 import { useRecommendationImpressions } from "../../shared/useRecommendationImpressions";
 import Select from "../../shared/ui/Select";
 import Reveal from "../../shared/ui/Reveal";
 import { useEffect, useRef, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
-import { useMutation } from "@tanstack/react-query";
+
 import {
   ArrowDown,
   ArrowUp,
@@ -15,12 +20,7 @@ import {
   Zap,
   X,
 } from "lucide-react";
-import {
-  useApi,
-  usePages,
-  pageItems,
-  queryClient,
-} from "../../shared/api/queries";
+import { useApi, usePages, pageItems } from "../../shared/api/queries";
 import { request } from "../../shared/api/http";
 import { usePreferences } from "../../shared/preferences";
 import {
@@ -35,7 +35,6 @@ import { useSession } from "../auth/Session";
 import { Preroll } from "../ads/Advertisement";
 import { TwitchClip } from "./ClipPage";
 import Comments from "./Comments";
-import { twitchImageUrl } from "../../shared/twitchImage";
 
 export default function ClipRushPage() {
   const { languageKey } = usePreferences();
@@ -47,9 +46,10 @@ export default function ClipRushPage() {
         <h1>
           <Zap size={20} fill="currentColor" /> ClipRush
         </h1>
-        <label>
+        <Field>
           <span className="sr-only">Порядок ClipRush</span>
           <Select
+            appearance="pill"
             aria-label="Порядок ClipRush"
             value={sort}
             onChange={(event) => setSort(event.target.value)}
@@ -58,7 +58,7 @@ export default function ClipRushPage() {
             <option value="popular">Популярные</option>
             <option value="recent">Сначала новые</option>
           </Select>
-        </label>
+        </Field>
       </header>
       <RushFeed
         key={`${languageKey}:${user?.id || "guest"}:${sort}`}
@@ -192,6 +192,7 @@ function RushFeed({ languageKey, sort }) {
   useEffect(() => {
     if (active && !seen.current.has(active.id)) {
       seen.current.add(active.id);
+      recordCategoryUse(active.game_id, user?.id, "views");
       request(`/clips/${active.id}/view`, { method: "POST" }).catch(() => {});
     }
     if (
@@ -299,8 +300,8 @@ function RushFeed({ languageKey, sort }) {
               />
             ) : (
               <div className="rush-card rush-idle" aria-hidden="true">
-                <img
-                  src={twitchImageUrl(clip.thumbnail_url)}
+                <TwitchImage
+                  src={clip.thumbnail_url}
                   alt=""
                   loading="lazy"
                   decoding="async"
@@ -437,47 +438,24 @@ function RushFeed({ languageKey, sort }) {
           <Comments key={active.id} clipId={active.id} />
         )}
       </Dialog>
-      <Dialog
+      <ShareDialog
         open={!!dialog}
         onClose={() => setDialog(null)}
+        clipId={dialog?.id}
         title="Поделиться клипом"
+        label="Ссылка на клип"
         className="dialog-wide"
-      >
-        {dialog && (
-          <label className="form-stack">
-            Ссылка на клип
-            <input
-              readOnly
-              value={`${window.location.origin}/clip/${dialog.id}`}
-              onFocus={(event) => event.target.select()}
-            />
-            <a className="text-link" href={`/clip/${dialog.id}`}>
-              Открыть страницу клипа <ArrowUpRight size={16} />
-            </a>
-          </label>
-        )}
-      </Dialog>
+        showPageLink
+      />
     </div>
   );
 }
 
 function RushClip({ clipId, onDialog }) {
   const { openLogin } = useOutletContext();
-  const { user } = useSession();
   const detail = useApi(`/clips/${clipId}`);
   const clip = detail.data;
-  const vote = useMutation({
-    mutationFn: () =>
-      request(`/clips/${clipId}/like`, {
-        method: "POST",
-        body: { is_like: true },
-      }),
-    onSuccess: (value) =>
-      queryClient.setQueryData(["api", `/clips/${clipId}`], (previous) => ({
-        ...previous,
-        ...value,
-      })),
-  });
+  const vote = useClipVote(clipId, openLogin);
   return (
     <div className="rush-card">
       <div className="rush-media">
@@ -519,7 +497,7 @@ function RushClip({ clipId, onDialog }) {
             <Button
               aria-pressed={clip.user_vote === "like"}
               busy={vote.isPending}
-              onClick={() => (user ? vote.mutate() : openLogin())}
+              onClick={() => vote.react(true)}
             >
               <ThumbsUp size={19} />
               {number(clip.like_count || 0)}

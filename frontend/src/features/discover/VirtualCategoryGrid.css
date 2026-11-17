@@ -1,0 +1,11 @@
+.category-virtual-grid {
+  position: relative;
+  overflow-anchor: none;
+}
+.category-virtual-row {
+  position: absolute;
+  inset-inline: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--category-columns), minmax(0, 1fr));
+  column-gap: var(--category-column-gap, var(--category-gap));
+}

@@ -1,14 +1,9 @@
+import ClipVoteButtons from "./ClipVoteButtons";
+import TwitchImage from "../../shared/ui/TwitchImage";
 import { useRef } from "react";
 import { useRecommendationImpressions } from "../../shared/useRecommendationImpressions";
 import { Link, useOutletContext } from "react-router-dom";
-import {
-  Eye,
-  Twitch,
-  Play,
-  ThumbsUp,
-  ThumbsDown,
-  MessageCircle,
-} from "lucide-react";
+import { Eye, Twitch, Play, MessageCircle } from "lucide-react";
 import {
   number,
   duration,
@@ -16,10 +11,11 @@ import {
   relativeTime,
   date,
 } from "../../shared/format";
-import { Avatar } from "../../shared/ui/Primitives";
-import { useSession } from "../auth/Session";
+import { Avatar, Button } from "../../shared/ui/Primitives";
+
 import useClipVote from "./useClipVote";
-import { twitchImageUrl } from "../../shared/twitchImage";
+
+import NewClipBadge from "./NewClipBadge";
 
 export default function ClipCard({
   clip,
@@ -27,6 +23,7 @@ export default function ClipCard({
   rank,
   showStats = false,
   priority = false,
+  onCategorySelect,
 }) {
   const impressionRef = useRef(null);
   useRecommendationImpressions(impressionRef, clip.delivery_id);
@@ -47,8 +44,8 @@ export default function ClipCard({
         aria-label={`Смотреть: ${clip.title}`}
       >
         {clip.thumbnail_url ? (
-          <img
-            src={twitchImageUrl(clip.thumbnail_url)}
+          <TwitchImage
+            src={clip.thumbnail_url}
             alt=""
             loading={featured || priority ? "eager" : "lazy"}
             fetchPriority={featured || priority ? "high" : "auto"}
@@ -60,6 +57,7 @@ export default function ClipCard({
           </span>
         )}
         {rank && <span className="rank">{String(rank).padStart(2, "0")}</span>}
+        <NewClipBadge published={clip.twitch_created_at} />
         {clip.promo_label && (
           <span className="promotion-label">
             Продвижение · {clip.promo_label}
@@ -72,6 +70,9 @@ export default function ClipCard({
       </Link>
       <div className="card-description">
         <Avatar
+          size={
+            showStats ? undefined : featured ? "avatar-featured" : "avatar-card"
+          }
           user={{
             avatar_url: clip.broadcaster_avatar,
             username: clip.broadcaster_name,
@@ -87,16 +88,28 @@ export default function ClipCard({
             ) : (
               clip.broadcaster_name
             )}
-            {showStats && clip.game_name && (
-              <Link
-                className="overview-card-category"
-                to={`/category/${clip.game_id}`}
-                title={clip.game_name}
-                aria-label={`Категория: ${clip.game_name}`}
-              >
-                {clip.game_name}
-              </Link>
-            )}
+            {showStats &&
+              clip.game_name &&
+              (onCategorySelect ? (
+                <Button
+                  variant="plain"
+                  className="overview-card-category"
+                  onClick={() => onCategorySelect(clip.game_id)}
+                  title={clip.game_name}
+                  aria-label={`Категория: ${clip.game_name}`}
+                >
+                  {clip.game_name}
+                </Button>
+              ) : (
+                <Link
+                  className="overview-card-category"
+                  to={`/category/${clip.game_id}`}
+                  title={clip.game_name}
+                  aria-label={`Категория: ${clip.game_name}`}
+                >
+                  {clip.game_name}
+                </Link>
+              ))}
             {showStats && published && (
               <span
                 className="overview-card-date"
@@ -169,37 +182,13 @@ export default function ClipCard({
 }
 
 function CardVotes({ clip }) {
-  const session = useSession();
   const outlet = useOutletContext();
-  const vote = useClipVote(clip.id);
-  const react = (isLike) => {
-    if (!session?.user) outlet?.openLogin();
-    else if (!vote.isPending) vote.mutate(isLike);
-  };
+  const vote = useClipVote(clip.id, outlet?.openLogin);
+
   return (
     <>
-      <button
-        type="button"
-        title="Нравится"
-        aria-label={`Лайки в ClipStream: ${clip.like_count || 0}`}
-        aria-pressed={clip.user_vote === "like"}
-        disabled={vote.isPending}
-        onClick={() => react(true)}
-      >
-        <ThumbsUp size={14} />
-        {number(clip.like_count)}
-      </button>
-      <button
-        type="button"
-        title="Не нравится"
-        aria-label={`Дизлайки в ClipStream: ${clip.dislike_count || 0}`}
-        aria-pressed={clip.user_vote === "dislike"}
-        disabled={vote.isPending}
-        onClick={() => react(false)}
-      >
-        <ThumbsDown size={14} />
-        {number(clip.dislike_count)}
-      </button>
+      <ClipVoteButtons clip={clip} vote={vote} compact />
+
       {vote.error && (
         <span className="overview-vote-error" role="alert">
           Не удалось сохранить голос. Попробуйте ещё раз.

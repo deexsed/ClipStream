@@ -26,7 +26,7 @@ export default function App() {
             <Route path="trends" element={<Discover mode="trends" />} />
           </Route>
           <Route path="discover" element={<Navigate to="/trends" replace />} />
-          <Route path="feed" element={<Clip feed />} />
+          <Route path="feed" element={<Navigate to="/" replace />} />
           <Route path="cliprush" element={<ClipRush />} />
           <Route path="following" element={<Following />} />
           <Route path="clip/:id" element={<Clip />} />

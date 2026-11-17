@@ -52,3 +52,15 @@ it("opens trends through client-side navigation", async () => {
   ).toBeTruthy();
   expect(screen.getByLabelText("Текущий адрес").textContent).toBe("/trends");
 });
+
+it.each(["/feed", "/feed?start=123&clip_langs=ru"])(
+  "redirects the retired watch route %s to the home page",
+  async (path) => {
+    show(path);
+    expect(
+      await screen.findByRole("heading", { name: "Каталог клипов" }),
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Текущий адрес").textContent).toBe("/");
+    expect(screen.queryByText("Кажется, мы сбились с эфира")).toBeNull();
+  },
+);

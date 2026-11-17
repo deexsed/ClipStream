@@ -68,6 +68,27 @@ describe("sidebar navigation", () => {
     expect(legal.getAttribute("href")).toBe("/legal");
   });
 
+  it.each([false, true])(
+    "uses Главная and omits the removed watch tab (mobile: %s)",
+    (mobile) => {
+      const view = mount(mobile);
+      if (mobile)
+        fireEvent.click(
+          screen.getByRole("button", { name: "Развернуть боковую панель" }),
+        );
+      const homeLinks = screen.getAllByRole("link", { name: "Главная" });
+      expect(homeLinks.length).toBeGreaterThan(0);
+      for (const link of homeLinks) expect(link.getAttribute("href")).toBe("/");
+      expect(
+        screen.queryByRole("link", { name: "Обзор", exact: true }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("link", { name: "Смотреть", exact: true }),
+      ).toBeNull();
+      expect(view.container.querySelector('a[href="/feed"]')).toBeNull();
+    },
+  );
+
   it("does not turn a mobile vertical scroll into a closing swipe", () => {
     const view = mount(true);
     fireEvent.click(

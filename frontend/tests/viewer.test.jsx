@@ -7,18 +7,18 @@ import { queryClient } from "../src/shared/api/queries";
 import { SessionProvider } from "../src/features/auth/Session";
 import { PreferencesProvider } from "../src/shared/preferences";
 import ClipPage from "../src/features/clips/ClipPage";
-it("shows an empty feed instead of a missing clip error when filters exclude all clips", async () => {
+it("shows a missing clip error for an invalid clip id", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
     new Response(JSON.stringify({ clips: [], has_more: false })),
   );
   render(
-    <MemoryRouter initialEntries={["/feed"]}>
+    <MemoryRouter initialEntries={["/clip/invalid"]}>
       <QueryClientProvider client={queryClient}>
         <SessionProvider>
           <PreferencesProvider>
             <Routes>
               <Route element={<Outlet context={{ openLogin: () => {} }} />}>
-                <Route path="/feed" element={<ClipPage feed />} />
+                <Route path="/clip/:id" element={<ClipPage />} />
               </Route>
             </Routes>
           </PreferencesProvider>
@@ -26,11 +26,10 @@ it("shows an empty feed instead of a missing clip error when filters exclude all
       </QueryClientProvider>
     </MemoryRouter>,
   );
-  await screen.findByText("Нет клипов для текущих настроек");
-  expect(screen.queryByRole("alert")).toBeNull();
+  expect(await screen.findByRole("alert")).toBeTruthy();
   expect(
-    screen.queryByText("Клип не найден. Выберите другой ролик."),
-  ).toBeNull();
+    screen.getByText("Клип не найден. Выберите другой ролик."),
+  ).toBeTruthy();
 });
 it("keeps the active Twitch iframe when voting and records no fabricated playback", async () => {
   const PreviousObserver = globalThis.ResizeObserver;

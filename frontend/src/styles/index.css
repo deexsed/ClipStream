@@ -863,11 +863,6 @@ select {
   color: var(--muted);
   font-size: 0.85rem;
 }
-.watch-navigation {
-  display: flex;
-  margin-left: auto;
-  gap: 8px;
-}
 .watch-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 264px;
@@ -1409,12 +1404,6 @@ select {
     margin-bottom: 18px;
     gap: 8px;
   }
-  .watch-navigation .button {
-    font-size: 0.7rem;
-    padding: 8px;
-    gap: 4px;
-    min-height: 36px;
-  }
   .back-link {
     font-size: 0.75rem;
   }
@@ -1713,21 +1702,6 @@ select {
   font-size: 0.85rem;
 }
 @media (max-width: 680px) {
-  input,
-  textarea,
-  select {
-    font-size: 16px;
-  }
-  .button,
-  .icon-button,
-  .header-actions .icon-button,
-  .watch-navigation .button {
-    min-height: 44px;
-  }
-  .icon-button,
-  .header-actions .icon-button {
-    min-width: 40px;
-  }
   .comment-actions > button {
     min-width: 44px;
     min-height: 44px;
@@ -2063,4 +2037,22 @@ h3 {
     min-width: 0;
     padding-inline: 6px;
   }
+}
+
+.clip-new-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #fff;
+  color: #111;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  font-weight: 650;
+  box-shadow: 0 1px 4px #0003;
+}
+.thumbnail:has(.clip-new-badge) .rank {
+  left: auto;
+  right: 8px;
 }

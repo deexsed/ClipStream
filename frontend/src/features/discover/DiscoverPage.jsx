@@ -1,34 +1,32 @@
+import CategoryPicker from "./CategoryPicker";
+import { categoryIdsFrom, categoryParams } from "./categoryFilter";
+import { recordCategoryUse } from "../../shared/categoryHistory";
+import CategoryArtwork from "./CategoryArtwork";
+import CategoryCatalog from "./CategoryCatalog";
+import VirtualClipGrid from "./VirtualClipGrid";
+
+import { Field } from "../../shared/ui/FormControls";
 import { useRecommendationFeed } from "../../shared/api/recommendations";
-import { twitchImageUrl } from "../../shared/twitchImage";
+
 import Select from "../../shared/ui/Select";
-import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import {
-  ArrowUpRight,
-  Gamepad2,
-  Flame,
-  Sparkles,
-  Clock3,
-  Grid2X2,
-  LayoutGrid,
-  Play,
-  Search,
-  SlidersHorizontal,
-} from "lucide-react";
-import { request, queryString } from "../../shared/api/http";
+import { ArrowUpRight, Shuffle, X, Play } from "lucide-react";
+import { queryString } from "../../shared/api/http";
 import { useApi, usePages, pageItems } from "../../shared/api/queries";
 import { usePreferences } from "../../shared/preferences";
 import { useSession } from "../auth/Session";
 import {
   Avatar,
-  LoadMore,
   PageHeading,
   Status,
+  Button,
+  ButtonLink,
 } from "../../shared/ui/Primitives";
 import ClipCard from "../clips/ClipCard";
 import Advertisement from "../ads/Advertisement";
 import "./DiscoverPage.css";
-import { number, twitchProfilePath } from "../../shared/format";
+import FeedComposition from "./FeedComposition";
+import { twitchProfilePath } from "../../shared/format";
 
 const periods = [
   ["today", "Сегодня"],
@@ -41,21 +39,7 @@ export default function DiscoverPage({ mode }) {
   const { id } = useParams();
   const { languageKey } = usePreferences();
   const session = useSession();
-  const [density, setDensity] = useState(() => {
-    try {
-      return localStorage.getItem("clipstream.discover.density") === "compact"
-        ? "compact"
-        : "comfortable";
-    } catch {
-      return "comfortable";
-    }
-  });
-  const changeDensity = (value) => {
-    setDensity(value);
-    try {
-      localStorage.setItem("clipstream.discover.density", value);
-    } catch {}
-  };
+  const gameIds = mode === "category" ? [id] : categoryIdsFrom(params);
   const q = (params.get("q") || "").trim();
   const home = !mode && !q;
   const period = periods.some(([value]) => value === params.get("period"))
@@ -66,24 +50,45 @@ export default function DiscoverPage({ mode }) {
   const sort = ["popular", "recent", "duration"].includes(params.get("sort"))
     ? params.get("sort")
     : "popular";
-  const setFilter = (patch) =>
+  const setFilter = (patch) => {
     setParams((previous) => {
       const next = new URLSearchParams(previous);
-      Object.entries(patch).forEach(([key, value]) => next.set(key, value));
+      Object.entries(patch).forEach(([key, value]) =>
+        value ? next.set(key, value) : next.delete(key),
+      );
       return next;
     });
-  const games = useApi(home ? null : "/games", { staleTime: 300000 });
-  const personalGames = useApi(
-    home && session.user ? "/games?personalized=1" : null,
-    { queryKey: ["viewed-games", session.user?.id], staleTime: 0 },
-  );
+  };
+  const changeCategories = (ids) => {
+    if (
+      ids.length === gameIds.length &&
+      ids.every((id) => gameIds.includes(id))
+    )
+      return;
+    ids
+      .filter((id) => !gameIds.includes(id))
+      .forEach((id) => recordCategoryUse(id, session.user?.id));
+    setFilter({
+      game_id: "",
+      game_ids: "",
+      ...categoryParams(ids),
+      browse: "1",
+    });
+  };
+  const games = useApi("/games", { staleTime: 300000 });
+  const personalGames = useApi(session.user ? "/games?personalized=1" : null, {
+    queryKey: ["viewed-games", session.user?.id],
+    staleTime: 0,
+  });
   const stripGames = home
     ? personalGames.data?.games || []
     : games.data?.games || [];
   const recommended =
     !mode &&
     !q &&
-    !["browse", "tag", "sort", "period"].some((key) => params.has(key));
+    !["browse", "tag", "sort", "period", "game_id", "game_ids"].some((key) =>
+      params.has(key),
+    );
   const recommendations = useRecommendationFeed({
     viewer: session.user?.id,
     languages: languageKey,
@@ -93,7 +98,7 @@ export default function DiscoverPage({ mode }) {
     mode === "categories" || recommended ? null : "/clips",
     "clips",
     {
-      game_id: mode === "category" ? id : undefined,
+      ...categoryParams(gameIds),
       period,
       sort,
       search: q || undefined,
@@ -119,237 +124,213 @@ export default function DiscoverPage({ mode }) {
         ? "Сейчас в тренде"
         : mode === "category"
           ? category?.name || "Клипы категории"
-          : "Лучшее из эфира";
+          : session.user
+            ? "Ваша лента"
+            : "Клипы";
   return (
-    <div
-      className={`page discover-page ${home ? "overview-page" : ""}`}
-      data-density={density}
-    >
+    <div className={`page discover-page ${home ? "overview-page" : ""}`}>
       <PageHeading
         eyebrow={
-          mode === "trends"
-            ? "Самое обсуждаемое — прямо сейчас"
-            : "Ваш ежедневный срез Twitch"
+          home
+            ? undefined
+            : mode === "trends"
+              ? "Самое обсуждаемое — прямо сейчас"
+              : "ClipStream / Главная"
         }
         title={title}
         description={
-          q
-            ? "Клипы, люди и каналы в одном месте."
-            : mode === "categories"
-              ? "От больших турниров до маленьких открытий."
-              : "Яркие моменты, новые открытия и любимые каналы."
+          home
+            ? undefined
+            : q
+              ? "Клипы, люди и каналы в одном месте."
+              : mode === "categories"
+                ? "От больших турниров до маленьких открытий."
+                : "Любимые каналы, свежие клипы и неожиданные открытия — вместе."
         }
       >
         {home && (
-          <Link className="button overview-watch" to="/cliprush">
-            <Play size={16} fill="currentColor" /> Открыть ClipRush{" "}
-            <ArrowUpRight size={15} />
-          </Link>
+          <ButtonLink className="overview-watch" to="/cliprush">
+            <Play size={16} fill="currentColor" /> ClipRush
+          </ButtonLink>
         )}
       </PageHeading>
       {!q && mode !== "categories" && (
         <Advertisement placement="banner" identity={mode || "home"} />
       )}
-      {!q && mode !== "categories" && mode !== "category" && (
-        <section
-          className="overview-categories"
-          aria-label={
-            home ? "Категории из вашей истории" : "Популярные категории"
-          }
-        >
-          {home && (
-            <div className="overview-section-label">
-              <span>Ваши категории</span>
-              <span className="muted">На основе просмотренных клипов</span>
-            </div>
-          )}
-          {home && personalGames.error && (
-            <Status
-              error={personalGames.error}
-              onRetry={personalGames.refetch}
-            />
-          )}
-          {home && session.user && personalGames.isPending && (
-            <p className="muted">Загружаем категории из истории…</p>
-          )}
-          {home &&
-            !personalGames.error &&
-            (!session.user ||
-              (!personalGames.isPending && !stripGames.length)) && (
-              <p className="overview-category-hint muted">
-                {session.user
-                  ? "Посмотрите несколько клипов — здесь появятся ваши категории."
-                  : "Войдите и смотрите клипы — здесь появятся категории из вашей истории."}
-              </p>
+      {!q &&
+        mode !== "categories" &&
+        mode !== "category" &&
+        (!home ||
+          (session.user && (stripGames.length > 0 || personalGames.error))) && (
+          <section
+            className={`overview-categories ${!stripGames.length ? "overview-categories-empty" : ""}`}
+            aria-label={
+              home ? "Категории из вашей истории" : "Популярные категории"
+            }
+          >
+            {home && stripGames.length > 0 && (
+              <div className="overview-section-label">
+                <span>Ваши категории</span>
+                <span className="muted">На основе просмотренных клипов</span>
+              </div>
             )}
-          <div className="category-strip">
-            {stripGames.slice(0, 10).map((game) => (
-              <Link key={game.id} to={`/category/${game.id}`}>
-                {game.box_art ? (
-                  <img
-                    src={twitchImageUrl(game.box_art)}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                  />
+            {home && personalGames.error && (
+              <Status
+                error={personalGames.error}
+                onRetry={personalGames.refetch}
+              />
+            )}
+            <div className="category-strip">
+              {stripGames.slice(0, 10).map((game) =>
+                home ? (
+                  <Button
+                    variant="plain"
+                    key={game.id}
+                    className="category-chip"
+                    aria-pressed={gameIds.includes(String(game.id))}
+                    onClick={() =>
+                      changeCategories(
+                        gameIds.includes(String(game.id))
+                          ? gameIds.filter((id) => id !== String(game.id))
+                          : [String(game.id)],
+                      )
+                    }
+                  >
+                    <CategoryArtwork game={game} />
+                    <span>{game.name}</span>
+                  </Button>
                 ) : (
-                  <Gamepad2 size={18} />
-                )}
-                <span>{game.name}</span>
-                <ArrowUpRight size={13} />
-              </Link>
-            ))}
-            <Link to="/categories" className="all-categories">
-              Все категории <ArrowUpRight size={14} />
-            </Link>
-          </div>
-        </section>
-      )}
+                  <Link key={game.id} to={`/category/${game.id}`}>
+                    <CategoryArtwork game={game} />
+                    <span>{game.name}</span>
+                    <ArrowUpRight size={13} />
+                  </Link>
+                ),
+              )}
+              {home ? (
+                <Button
+                  variant="plain"
+                  className="category-chip all-categories"
+                  aria-pressed={!gameIds.length}
+                  onClick={() => changeCategories([])}
+                >
+                  Все категории
+                </Button>
+              ) : (
+                <Link to="/categories" className="all-categories">
+                  Все категории <ArrowUpRight size={14} />
+                </Link>
+              )}
+            </div>
+          </section>
+        )}
       {mode === "categories" ? (
-        <Status
-          error={games.error}
-          loading={games.isPending}
-          empty={
-            games.data?.games?.length === 0 && "Категории пока не появились"
-          }
-          onRetry={games.refetch}
-        >
-          <div className="categories-grid">
-            {(games.data?.games || []).map((game) => (
-              <Link
-                className="category-card"
-                to={`/category/${game.id}`}
-                key={game.id}
-              >
-                <div>
-                  {game.box_art ? (
-                    <img
-                      src={twitchImageUrl(game.box_art)}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  ) : (
-                    <Gamepad2 size={40} />
-                  )}
-                </div>
-                <h2>{game.name}</h2>
-                <p>{number(game.clip_count)} клипов</p>
-              </Link>
-            ))}
-          </div>
-        </Status>
+        <CategoryCatalog query={games} />
       ) : (
         <>
-          {home && (
-            <nav className="overview-tabs" aria-label="Подборка клипов">
-              {[
-                ["recommended", "Для вас", Sparkles],
-                ["popular", "Популярное", Flame],
-                ["recent", "Новое", Clock3],
-              ].map(([value, label, Icon]) => (
-                <button
-                  key={value}
-                  aria-pressed={
-                    value === "recommended"
-                      ? recommended
-                      : !recommended && sort === value
-                  }
-                  onClick={() =>
-                    setParams((previous) => {
-                      const next = new URLSearchParams(previous);
-                      ["browse", "sort", "period", "tag"].forEach((key) =>
-                        next.delete(key),
-                      );
-                      if (value !== "recommended") {
-                        next.set("browse", "1");
-                        next.set("sort", value);
-                        next.set("period", "all");
-                      }
-                      return next;
-                    })
-                  }
-                >
-                  <Icon size={17} />
-                  {label}
-                </button>
-              ))}
-            </nav>
-          )}
-          <div className="filter-bar overview-filter-bar">
-            <div className="overview-feed-heading">
-              <h2>
-                {recommended
-                  ? "Моменты, которые стоит увидеть"
-                  : home
-                    ? sort === "recent"
-                      ? "Свежее из эфира"
-                      : "Клипы, которые смотрят"
-                    : "Клипы"}
-              </h2>
-              {recommended && (
-                <p className="muted">
-                  Знакомые каналы и новые открытия в одной ленте
-                </p>
-              )}
-              {!recommended && (
-                <div className="segmented" aria-label="Период">
-                  {periods.map(([value, label]) => (
-                    <button
-                      key={value}
-                      aria-pressed={period === value}
-                      onClick={() => setFilter({ period: value })}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="overview-feed-controls">
-              <label className="select-label">
-                <SlidersHorizontal size={15} />
+          <section className="feed-toolbar" aria-label="Управление лентой">
+            <div className="feed-filter-controls">
+              <Field inline className="select-label">
                 <Select
                   aria-label="Сортировка"
                   value={recommended ? "recommended" : sort}
-                  onChange={(event) =>
-                    setFilter({ sort: event.target.value, browse: "1" })
-                  }
+                  onChange={(event) => {
+                    if (event.target.value === "recommended") {
+                      setParams((previous) => {
+                        const next = new URLSearchParams(previous);
+                        [
+                          "browse",
+                          "sort",
+                          "period",
+                          "tag",
+                          "game_id",
+                          "game_ids",
+                        ].forEach((key) => next.delete(key));
+                        return next;
+                      });
+                    } else setFilter({ sort: event.target.value, browse: "1" });
+                  }}
                 >
-                  {recommended && (
-                    <option value="recommended">Рекомендации</option>
-                  )}
+                  {home && <option value="recommended">Смешанная лента</option>}
                   <option value="popular">Популярные</option>
                   <option value="recent">Сначала новые</option>
                   <option value="duration">По длительности</option>
                 </Select>
-              </label>
-              <div
-                className="overview-density"
-                role="group"
-                aria-label="Плотность карточек"
-              >
-                {[
-                  ["comfortable", "Крупные карточки", LayoutGrid],
-                  ["compact", "Компактные карточки", Grid2X2],
-                ].map(([value, label, Icon]) => (
-                  <button
-                    key={value}
-                    aria-label={label}
-                    title={label}
-                    aria-pressed={density === value}
-                    onClick={() => changeDensity(value)}
-                  >
-                    <Icon size={17} />
-                  </button>
-                ))}
-              </div>
+              </Field>{" "}
+              {mode !== "category" && (
+                <div className="feed-filter">
+                  <CategoryPicker
+                    value={gameIds}
+                    games={games.data?.games || []}
+                    viewed={personalGames.data?.games || []}
+                    viewer={session.user?.id}
+                    loading={games.isPending}
+                    error={games.error}
+                    onRetry={games.refetch}
+                    onChange={changeCategories}
+                  />
+                </div>
+              )}
+              <Field inline className="feed-filter">
+                <span>Период</span>
+                <Select
+                  aria-label="Период клипов"
+                  value={period}
+                  onChange={(event) =>
+                    setFilter({ period: event.target.value, browse: "1" })
+                  }
+                >
+                  {periods.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
             </div>
-          </div>
+            <div className="feed-toolbar-actions">
+              {home && recommended && (
+                <Button
+                  className="feed-shuffle"
+                  disabled={result.isFetching}
+                  busy={result.isFetching}
+                  onClick={recommendations.startNewSession}
+                >
+                  <Shuffle size={16} /> Новая смесь
+                </Button>
+              )}
+              {!recommended && (
+                <Button
+                  variant="plain"
+                  className="text-link"
+                  onClick={() =>
+                    setParams((previous) => {
+                      const next = new URLSearchParams(previous);
+                      [
+                        "browse",
+                        "sort",
+                        "period",
+                        "tag",
+                        "game_id",
+                        "game_ids",
+                      ].forEach((key) => next.delete(key));
+                      return next;
+                    })
+                  }
+                >
+                  <X size={14} /> Сбросить фильтры
+                </Button>
+              )}
+            </div>
+            {games.error && (
+              <Status error={games.error} onRetry={games.refetch} />
+            )}
+          </section>
           {params.get("tag") && (
             <p className="tag-filter">
               Тег: <strong>{params.get("tag")}</strong>
-              <button
+              <Button
+                variant="plain"
                 className="text-link"
                 onClick={() =>
                   setParams((previous) => {
@@ -360,7 +341,7 @@ export default function DiscoverPage({ mode }) {
                 }
               >
                 Сбросить
-              </button>
+              </Button>
             </p>
           )}
           {q.length >= 2 && (
@@ -389,36 +370,37 @@ export default function DiscoverPage({ mode }) {
               "По этим фильтрам клипов пока нет"
             }
           >
-            <div className="clips-grid overview-grid">
-              {clips.map((clip, index) => (
+            {home && clips.length > 0 && <FeedComposition clips={clips} />}
+            <VirtualClipGrid
+              key={JSON.stringify([
+                mode,
+                id,
+                params.toString(),
+                languageKey,
+                session.user?.id,
+              ])}
+              clips={clips}
+              query={result}
+              renderClip={(clip, index) => (
                 <ClipCard
                   key={clip.id}
                   clip={clip}
                   showStats
                   priority={index < 4}
+                  onCategorySelect={
+                    home
+                      ? (gameId) => changeCategories([String(gameId)])
+                      : undefined
+                  }
                   rank={mode === "trends" ? index + 1 : undefined}
                 />
-              ))}
-            </div>
+              )}
+            />
             {result.error && !result.isFetchNextPageError && (
               <Status error={result.error} onRetry={result.refetch} />
             )}
             {clips.length >= 6 && (
               <Advertisement placement="feed" identity={mode || "home"} />
-            )}
-            <LoadMore query={result} />
-            {recommended && !result.hasNextPage && clips.length > 0 && (
-              <button
-                className="button"
-                onClick={recommendations.startNewSession}
-              >
-                Новая подборка
-              </button>
-            )}
-            {recommended && !result.hasNextPage && clips.length > 0 && (
-              <Link className="button" to="/?browse=1&period=all">
-                Перейти ко всем клипам <ArrowUpRight size={15} />
-              </Link>
             )}
           </Status>
           {session.user &&

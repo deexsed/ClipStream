@@ -13,15 +13,14 @@ import {
 import {
   Bell,
   ChevronDown,
-  Compass,
   FileText,
+  House,
   Flame,
   Zap,
   Grid2X2,
   Languages,
   Moon,
   Sun,
-  Play,
   Menu,
   Settings,
   Shield,
@@ -55,10 +54,9 @@ import SearchField from "../shared/ui/SearchField";
 import brandMark from "../assets/clipstream-raccoon.svg?no-inline";
 
 const links = [
-  { to: "/", label: "Обзор", icon: Compass },
+  { to: "/", label: "Главная", icon: House },
   { to: "/trends", label: "В тренде", icon: Flame },
   { to: "/categories", label: "Категории", icon: Grid2X2 },
-  { to: "/feed", label: "Смотреть", icon: Play },
   { to: "/cliprush", label: "ClipRush", icon: Zap },
 ];
 

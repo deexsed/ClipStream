@@ -38,7 +38,7 @@ function updateClip(data, id, vote) {
   return next;
 }
 
-export default function useClipVote(id) {
+export default function useClipVote(id, onLogin) {
   const client = useQueryClient();
   const session = useSession();
   const mutationKey = ["clip-vote", session?.user?.id, String(id)];
@@ -66,5 +66,13 @@ export default function useClipVote(id) {
       );
     },
   });
-  return { ...mutation, isPending: pending || mutation.isPending };
+  const isPending = pending || mutation.isPending;
+  return {
+    ...mutation,
+    isPending,
+    react: (isLike) => {
+      if (!session?.user) onLogin?.();
+      else if (!isPending) mutation.mutate(isLike);
+    },
+  };
 }

@@ -1,35 +1,29 @@
+import { recordCategoryUse } from "../../shared/categoryHistory";
+import ShareDialog from "./ShareDialog";
+import ClipVoteButtons from "./ClipVoteButtons";
+import TwitchImage from "../../shared/ui/TwitchImage";
+import ExternalLink from "../../shared/ui/ExternalLink";
+import { SectionHeading } from "../../shared/ui/Layout";
+import { Feedback } from "../../shared/ui/Feedback";
+import { TextArea, Field } from "../../shared/ui/FormControls";
 import { useEffect, useRef, useState } from "react";
-import {
-  Link,
-  useOutletContext,
-  useParams,
-  useSearchParams,
-} from "react-router-dom";
+import { Link, useOutletContext, useParams } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import useClipVote from "./useClipVote";
 import {
-  ArrowDown,
   ArrowLeft,
-  ArrowUp,
   ArrowUpRight,
   Eye,
   Flag,
   Link2,
   MoreHorizontal,
   Play,
-  ThumbsDown,
-  ThumbsUp,
 } from "lucide-react";
 import { request, queryString } from "../../shared/api/http";
-import {
-  useApi,
-  usePages,
-  pageItems,
-  queryClient,
-} from "../../shared/api/queries";
+import { useApi, queryClient } from "../../shared/api/queries";
 import { usePreferences } from "../../shared/preferences";
 import {
-  Avatar,
+  Identity,
   Button,
   Dialog,
   IconButton,
@@ -40,28 +34,19 @@ import { useSession } from "../auth/Session";
 import ClipCard from "./ClipCard";
 import Comments from "./Comments";
 import { Preroll } from "../ads/Advertisement";
-import { twitchImageUrl } from "../../shared/twitchImage";
 
-export default function ClipPage({ feed = false }) {
-  const { id: routeId } = useParams();
-  const [params, setParams] = useSearchParams();
+export default function ClipPage() {
+  const { id } = useParams();
   const { openLogin } = useOutletContext();
   const { languageKey } = usePreferences();
   const session = useSession();
-  const queue = usePages(feed ? "/clips" : null, "clips", {
-    period: "all",
-    sort: "popular",
-    clip_langs: languageKey,
-  });
-  const rows = pageItems(queue, "clips");
-  const id = feed ? params.get("start") || String(rows[0]?.id || "") : routeId;
   const validId = /^\d+$/.test(id || "");
   const clipQuery = useApi(validId ? `/clips/${id}` : null, {
     staleTime: 60000,
   });
   const clip = clipQuery.data;
   const related = useApi(
-    !feed && validId
+    validId
       ? `/clips/${id}/related?${queryString({ limit: 8, clip_langs: languageKey })}`
       : null,
   );
@@ -73,47 +58,12 @@ export default function ClipPage({ feed = false }) {
     setAction(null);
     if (clip?.id && opened.current !== clip.id) {
       opened.current = clip.id;
+      recordCategoryUse(clip.game_id, session.user?.id, "views");
       request(`/clips/${clip.id}/view`, { method: "POST" }).catch(() => {});
     }
   }, [clip?.id]);
-  const vote = useClipVote(id);
-  const react = (isLike) => {
-    if (!session.user) openLogin();
-    else vote.mutate(isLike);
-  };
-  const index = rows.findIndex((row) => String(row.id) === id);
-  const navigateClip = (next) => {
-    if (next != null)
-      setParams((previous) => {
-        const updated = new URLSearchParams(previous);
-        updated.set("start", String(next));
-        return updated;
-      });
-  };
-  useEffect(() => {
-    if (!feed) return;
-    const handler = (event) => {
-      if (
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.target.closest(
-          "input,textarea,select,button,a,[contenteditable],dialog",
-        )
-      )
-        return;
-      if (event.key === "ArrowDown" && rows[index + 1]) {
-        event.preventDefault();
-        navigateClip(rows[index + 1].id);
-      }
-      if (event.key === "ArrowUp" && rows[index - 1]) {
-        event.preventDefault();
-        navigateClip(rows[index - 1].id);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [feed, id, rows]);
+  const vote = useClipVote(id, openLogin);
+
   const share = async () => {
     try {
       await navigator.clipboard.writeText(
@@ -124,54 +74,22 @@ export default function ClipPage({ feed = false }) {
       setAction("share");
     }
   };
-  const emptyFeed =
-    feed &&
-    !params.get("start") &&
-    !queue.isPending &&
-    !queue.error &&
-    rows.length === 0;
-  const error =
-    queue.error ||
-    clipQuery.error ||
-    (!validId && !emptyFeed && (!feed || !queue.isPending)
-      ? new Error("Клип не найден. Выберите другой ролик.")
-      : null);
   return (
-    <div className={`page watch-page ${feed ? "watch-feed" : ""}`}>
+    <div className="page watch-page">
       <div className="watch-topline">
         <Link className="back-link" to="/">
-          <ArrowLeft size={17} /> Обзор
+          <ArrowLeft size={17} /> Главная
         </Link>
-        {feed && (
-          <div className="watch-navigation">
-            <Button
-              disabled={index <= 0}
-              onClick={() => navigateClip(rows[index - 1]?.id)}
-            >
-              <ArrowUp size={16} /> Предыдущий
-            </Button>
-            <Button
-              disabled={!rows[index + 1] && !queue.hasNextPage}
-              busy={queue.isFetchingNextPage}
-              onClick={async () => {
-                if (rows[index + 1]) navigateClip(rows[index + 1].id);
-                else {
-                  const next = await queue.fetchNextPage();
-                  const item = next.data?.pages.at(-1)?.clips[0];
-                  if (item) navigateClip(item.id);
-                }
-              }}
-            >
-              Следующий <ArrowDown size={16} />
-            </Button>
-          </div>
-        )}
       </div>
       <Status
-        error={error}
-        loading={(feed && queue.isPending) || (validId && clipQuery.isPending)}
-        empty={emptyFeed && "Нет клипов для текущих настроек"}
-        onRetry={() => (validId ? clipQuery.refetch() : queue.refetch())}
+        error={
+          clipQuery.error ||
+          (!validId
+            ? new Error("Клип не найден. Выберите другой ролик.")
+            : null)
+        }
+        loading={validId && clipQuery.isPending}
+        onRetry={clipQuery.refetch}
       >
         {clip && (
           <div className="watch-layout">
@@ -197,13 +115,12 @@ export default function ClipPage({ feed = false }) {
                 </div>
               </div>
               <div className="watch-toolbar">
-                <div className="creator">
-                  <Avatar
-                    user={{
-                      username: clip.broadcaster_name,
-                      avatar_url: clip.broadcaster_avatar,
-                    }}
-                  />
+                <Identity
+                  user={{
+                    username: clip.broadcaster_name,
+                    avatar_url: clip.broadcaster_avatar,
+                  }}
+                >
                   <div>
                     {twitchProfilePath(
                       clip.broadcaster_id,
@@ -222,26 +139,10 @@ export default function ClipPage({ feed = false }) {
                     )}
                     <small>Канал на Twitch</small>
                   </div>
-                </div>
+                </Identity>
                 <div className="reaction-buttons">
-                  <button
-                    className={clip.user_vote === "like" ? "selected" : ""}
-                    aria-label="Нравится"
-                    aria-pressed={clip.user_vote === "like"}
-                    disabled={vote.isPending}
-                    onClick={() => react(true)}
-                  >
-                    <ThumbsUp size={17} /> {number(clip.like_count)}
-                  </button>
-                  <button
-                    className={clip.user_vote === "dislike" ? "selected" : ""}
-                    aria-label="Не нравится"
-                    aria-pressed={clip.user_vote === "dislike"}
-                    disabled={vote.isPending}
-                    onClick={() => react(false)}
-                  >
-                    <ThumbsDown size={17} /> {number(clip.dislike_count)}
-                  </button>
+                  <ClipVoteButtons clip={clip} vote={vote} />
+
                   <IconButton label="Скопировать ссылку" onClick={share}>
                     <Link2 size={18} />
                   </IconButton>
@@ -256,11 +157,7 @@ export default function ClipPage({ feed = false }) {
                 </div>
               </div>
               {vote.error && <Status error={vote.error} />}
-              {message && (
-                <p role="status" className="feedback">
-                  {message}
-                </p>
-              )}
+              {message && <Feedback role="status">{message}</Feedback>}
               {clip.creator_twitch_id && (
                 <p className="classification-note muted">
                   Клип создал{" "}
@@ -290,27 +187,21 @@ export default function ClipPage({ feed = false }) {
               <Comments clipId={clip.id} anchor />
             </div>
             <aside className="related">
-              <div className="section-label">
-                <h2>{feed ? "В этой подборке" : "Продолжить смотреть"}</h2>
-                <Link
-                  to={feed ? "/" : `/feed?start=${id}`}
-                  aria-label="Открыть ленту"
-                >
+              <SectionHeading>
+                <h2>Продолжить смотреть</h2>
+                <Link to="/" aria-label="На главную">
                   <ArrowUpRight size={18} />
                 </Link>
-              </div>
+              </SectionHeading>
               <Status
                 error={related.error}
-                loading={!feed && related.isPending}
+                loading={related.isPending}
                 onRetry={related.refetch}
               >
-                {(feed
-                  ? rows.filter((row) => row.id !== clip.id).slice(0, 8)
-                  : related.data?.clips || []
-                ).map((row) => (
+                {(related.data?.clips || []).map((row) => (
                   <ClipCard key={row.id} clip={row} />
                 ))}
-                {!feed && related.data?.clips?.length === 0 && (
+                {related.data?.clips?.length === 0 && (
                   <p className="muted">
                     Похожие клипы пока не найдены. Загляните в{" "}
                     <Link to="/trends">тренды</Link>.
@@ -321,40 +212,11 @@ export default function ClipPage({ feed = false }) {
           </div>
         )}
       </Status>
-      {emptyFeed && (
-        <p className="muted">
-          Проверьте выбранные языки
-          {session.user ? (
-            <>
-              {" "}
-              и{" "}
-              <Link
-                className="text-link"
-                to={`/u/${encodeURIComponent(session.user.username)}?tab=settings`}
-              >
-                настройки ленты
-              </Link>
-              .
-            </>
-          ) : (
-            ". Попробуйте другую подборку в обзоре."
-          )}
-        </p>
-      )}
-      <Dialog
+      <ShareDialog
         open={action === "share"}
         onClose={() => setAction(null)}
-        title="Ссылка на клип"
-      >
-        <label className="form-stack">
-          Скопируйте ссылку
-          <input
-            readOnly
-            value={`${window.location.origin}/clip/${id}`}
-            onFocus={(event) => event.target.select()}
-          />
-        </label>
-      </Dialog>
+        clipId={id}
+      />
       <ClipActions
         open={action === "options"}
         onClose={() => setAction(null)}
@@ -389,24 +251,15 @@ export function TwitchClip({ clip, autoplay = false, muted = false }) {
           referrerPolicy="strict-origin-when-cross-origin"
         />
       ) : (
-        <a
-          className="player-preview"
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
+        <ExternalLink className="player-preview" href={url}>
           {clip.thumbnail_url && (
-            <img
-              src={twitchImageUrl(clip.thumbnail_url)}
-              alt=""
-              decoding="async"
-            />
+            <TwitchImage src={clip.thumbnail_url} alt="" decoding="async" />
           )}
           <span className="external-play">
             <Play size={22} fill="currentColor" /> Смотреть на Twitch{" "}
             <ArrowUpRight size={16} />
           </span>
-        </a>
+        </ExternalLink>
       )}
     </div>
   );
@@ -454,9 +307,9 @@ function ClipActions({ open, onClose, clipId, onDone }) {
             });
           }}
         >
-          <label>
+          <Field>
             Сообщить о нарушении
-            <textarea
+            <TextArea
               required
               minLength={3}
               maxLength={2000}
@@ -464,7 +317,7 @@ function ClipActions({ open, onClose, clipId, onDone }) {
               onChange={(event) => setReason(event.target.value)}
               placeholder="Что случилось?"
             />
-          </label>
+          </Field>
           <Button busy={mutation.isPending}>
             <Flag size={15} /> Отправить жалобу
           </Button>

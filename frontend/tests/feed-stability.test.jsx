@@ -15,6 +15,37 @@ const wrapper = ({ children }) => (
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status });
 
+it("creates a new home session after a document reload, while sharing the current document's cache", async () => {
+  const sessions = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => {
+    sessions.push(
+      new URL(path, "http://localhost").searchParams.get("session_id"),
+    );
+    return json({ items: [{ clip: { id: sessions.length } }] });
+  });
+  const first = renderHook(
+    () => useRecommendationFeed({ viewer: 1, languages: "ru" }),
+    { wrapper },
+  );
+  await waitFor(() => expect(first.result.current.isSuccess).toBe(true));
+  const sameDocument = renderHook(
+    () => useRecommendationFeed({ viewer: 1, languages: "ru" }),
+    { wrapper },
+  );
+  expect(sessions).toHaveLength(1);
+  sameDocument.unmount();
+  first.unmount();
+  // A full document reload recreates the QueryClient as well as the hook.
+  queryClient.clear();
+  const reloaded = renderHook(
+    () => useRecommendationFeed({ viewer: 1, languages: "ru" }),
+    { wrapper },
+  );
+  await waitFor(() => expect(reloaded.result.current.isSuccess).toBe(true));
+  expect(sessions).toHaveLength(2);
+  expect(sessions[0]).not.toBe(sessions[1]);
+});
+
 for (const recommendations of [false, true]) {
   it(`preserves ${recommendations ? "recommended" : "browse"} clips on remount and reconnect, appends on demand, and allows explicit refresh`, async () => {
     let imported = false;
