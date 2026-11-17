@@ -4,6 +4,7 @@ const number = (value) =>
 
 const phases = {
   fresh: "Свежие · от 5 просмотров",
+  recovery: "После простоя · от 5 просмотров",
   history: "История · от 50 просмотров",
   categories: "Категории",
 };
