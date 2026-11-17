@@ -146,6 +146,36 @@ int main() {
             worker.stop();
             check(features_refreshed && upstream_calls == 0, "Feature worker depends on Twitch");
             services::ClipService service(clips, users, cache);
+            const std::vector<std::string> subscriptions{"8", "9", "10", "11", "12", "13", "14", "15"};
+            clips.save_recommendation_twitch_follows(user_ids[0], subscriptions);
+            const auto subscribed_home = service.get_home_feed(user_ids[0], 20, "", suffix + "following");
+            size_t subscribed_count = 0;
+            for (const auto &row : subscribed_home["items"]) {
+                const auto broadcaster = row["clip"]["broadcaster_id"].get<std::string>();
+                subscribed_count += std::find(subscriptions.begin(), subscriptions.end(), broadcaster) !=
+                                    subscriptions.end();
+            }
+            check(subscribed_count >= 4, "Persisted Twitch subscriptions missing from home mix");
+            const auto home = service.get_home_feed(0, 6, "", suffix + "home-a");
+            const auto home_repeat =
+                    service.get_home_feed(0, 6, "", suffix + "home-a");
+            const auto home_rotated =
+                    service.get_home_feed(0, 6, "", suffix + "home-b");
+            check(home == home_repeat, "Home queue changed within session");
+            bool home_changed = false;
+            for (size_t i = 0; i < home["items"].size(); ++i)
+                home_changed |= home["items"][i]["clip"]["id"] !=
+                                                home_rotated["items"][i]["clip"]["id"];
+            check(home_changed,
+                        "Fresh home session kept the same clips in the same positions");
+            if (!home["next_cursor"].is_null()) {
+                const auto home_next =
+                        service.get_home_feed(0, 6, home["next_cursor"], suffix + "home-a");
+                for (const auto &row : home_next["items"])
+                    for (const auto &first_row : home["items"])
+                        check(row["clip"]["id"] != first_row["clip"]["id"],
+                                    "Home pagination repeated a clip");
+            }
             auto concurrent = std::async(std::launch::async, [&] {
                 return service.get_home_feed(user_ids[0], 6, "", suffix + "race", std::nullopt, "rush");
             });

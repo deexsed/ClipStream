@@ -1,6 +1,7 @@
 #include "services/RecommendationScoring.hpp"
 #include <chrono>
 #include <iostream>
+#include <set>
 #include <stdexcept>
 
 using namespace clipstream::services::recommendations;
@@ -74,6 +75,58 @@ int main() {
         for (size_t i = 0; i < feed.size(); ++i)
             changed |= feed[i].clip.id != rotated[i].clip.id;
         check(changed, "Exploration must rotate across sessions");
+        // Regression: unequal scores used to pin every ordinary home position,
+        // even though the browser supplied a fresh session on every reload.
+        std::vector<Candidate> ordinary;
+        for (uint64_t i = 1; i <= 300; ++i) {
+            auto c = make(i);
+            c.score = 0.6 - i / 10000.0;
+            ordinary.push_back(c);
+        }
+        const auto home_a = select(ordinary, 24, 42);
+        const auto home_b = select(ordinary, 24, 12);
+        const auto home_repeat = select(ordinary, 24, 42);
+        std::set<uint64_t> first_ids;
+        size_t moved = 0, overlap = 0;
+        for (size_t i = 0; i < home_a.size(); ++i) {
+            first_ids.insert(home_a[i].clip.id);
+            moved += home_a[i].clip.id != home_b[i].clip.id;
+            check(home_a[i].clip.id == home_repeat[i].clip.id,
+                        "Home draw changed within session");
+        }
+        for (const auto &c : home_b)
+            overlap += first_ids.contains(c.clip.id);
+        check(first_ids.size() == 24, "Home draw duplicated clips");
+        check(moved >= 18 && overlap < 12,
+                    "Reload did not renew ordinary home clips");
+        std::reverse(ordinary.begin(), ordinary.end());
+        const auto reversed = select(ordinary, 24, 42);
+        for (size_t i = 0; i < home_a.size(); ++i)
+            check(home_a[i].clip.id == reversed[i].clip.id,
+                        "SQL input order changed seeded ranking");
+        auto high_quality = make(1), low_quality = make(2);
+        high_quality.score = 0.9;
+        low_quality.score = 0.1;
+        size_t preferred = 0;
+        for (uint64_t seed = 1; seed <= 250; ++seed)
+            preferred += select({high_quality, low_quality}, 1, seed)[0].clip.id == 1;
+        check(preferred >= 245, "Home sampling discarded relevance");
+        Profile followed_profile;
+        std::vector<Candidate> following;
+        for (uint64_t i = 1; i <= 60; ++i) {
+            following.push_back(make(i));
+            if (i > 40)
+                followed_profile.followed_channels.push_back(std::to_string(i));
+        }
+        score(following, followed_profile);
+        for (auto &c : following)
+            c.score = c.followed ? 0.3 : 0.8;
+        const auto followed_feed = select(following, 20, 42);
+        check(followed_feed[1].followed && followed_feed[6].followed &&
+                            followed_feed[11].followed && followed_feed[16].followed,
+                    "Home omitted followed channels despite eligible candidates");
+        check(select(ordinary, 24, 42).size() == 24,
+                    "Guest feed needs no followed channels");
         // Ordinary positions cannot consume the only reserved candidates ahead of
         // their slots.
         std::vector<Candidate> tiny{make(1), make(2), make(3)};

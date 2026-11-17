@@ -5,7 +5,7 @@
 #include <vector>
 
 namespace clipstream::recommendations {
-inline constexpr unsigned version = 1;
+inline constexpr unsigned version = 2;
 enum class Surface { Home, Rush };
 
 struct Interaction {
@@ -27,7 +27,7 @@ struct Candidate {
     double collaborative{}; // signed, shrunk toward zero; unknown = zero
     double recently_opened{};
     bool evergreen{}, discovery{};
-    bool seen_before{}, novel{};
+    bool seen_before{}, novel{}, followed{};
     double score{};
 };
 

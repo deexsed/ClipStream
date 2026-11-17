@@ -187,6 +187,8 @@ void score(std::vector<Candidate> &cs, const Profile &p, Surface surface) {
                             (2.0 * v.size());
         const double twitch = 0.65 * popularity + 0.35 * bounded_log(c.twitch_velocity, 10000);
         const double personal = personal_match(p, c.clip);
+        c.followed = std::find(p.followed_channels.begin(), p.followed_channels.end(),
+                               c.clip.broadcaster_id) != p.followed_channels.end();
         c.score = (0.05 + 0.25 * confidence) * personal + (0.40 - 0.15 * confidence) * audience_quality(c) +
                   (0.30 - 0.18 * confidence) * twitch +
                   0.20 * confidence * (0.5 + 0.5 * std::clamp(c.collaborative, -1.0, 1.0)) +
@@ -197,8 +199,7 @@ void score(std::vector<Candidate> &cs, const Profile &p, Surface surface) {
             approval(c.likes, c.dislikes) >= 0.65 && !c.seen_before &&
             std::none_of(p.interactions.begin(), p.interactions.end(),
                          [&](const auto &i) { return i.clip.broadcaster_id == c.clip.broadcaster_id; }) &&
-            std::find(p.followed_channels.begin(), p.followed_channels.end(), c.clip.broadcaster_id) ==
-                p.followed_channels.end();
+            !c.followed;
         if (surface == Surface::Rush) {
             // Rush emphasizes individual taste and unknown content over global
             // popularity.
@@ -215,7 +216,25 @@ void score(std::vector<Candidate> &cs, const Profile &p, Surface surface) {
 }
 std::vector<Candidate> select(std::vector<Candidate> cs, size_t limit, uint64_t seed, size_t offset,
                               Surface surface) {
+    // Gumbel top-k samples without replacement, weighted by relevance. Compute
+    // once per candidate: the comparator must remain pure and inexpensive.
+    // The queue persists this order; only a new home session changes the draw.
+    std::unordered_map<uint64_t, double> priorities;
+    if (surface == Surface::Home && seed != 0) {
+        priorities.reserve(cs.size());
+        for (const auto &c : cs) {
+            // Midpoints keep U strictly inside (0,1), including extreme hashes.
+            const double u =
+                    ((mix(c.clip.id ^ seed) >> 12) + 0.5) / 4503599627370496.0;
+            priorities.emplace(c.clip.id, c.score - 0.08 * std::log(-std::log(u)));
+        }
+    }
     std::stable_sort(cs.begin(), cs.end(), [&](const auto &a, const auto &b) {
+        if (!priorities.empty()) {
+            const auto pa = priorities.at(a.clip.id), pb = priorities.at(b.clip.id);
+            if (pa != pb)
+                return pa > pb;
+        }
         if (a.score != b.score)
             return a.score > b.score;
         return mix(a.clip.id ^ seed) > mix(b.clip.id ^ seed);
@@ -243,6 +262,8 @@ std::vector<Candidate> select(std::vector<Candidate> cs, size_t limit, uint64_t 
                                   ? (position % 10 == 1 || position % 10 == 4 || position % 10 == 8)
                                   : position % 10 == 3;
         const bool want_novel = surface == Surface::Rush && position % 10 == 6;
+        const bool want_followed = surface == Surface::Home &&
+                                   (position % 10 == 1 || position % 10 == 6);
         size_t chosen = cs.size();
         for (unsigned pass = 0; pass < 4 && chosen == cs.size(); ++pass) {
             for (size_t k = 0; k < cs.size(); ++k) {
@@ -251,7 +272,8 @@ std::vector<Candidate> select(std::vector<Candidate> cs, size_t limit, uint64_t 
                     continue;
                 if (pass < 2 &&
                     ((want_old && !cs[i].evergreen) ||
-                     (want_new && (!cs[i].discovery || cs[i].seen_before)) || (want_novel && !cs[i].novel)))
+                     (want_new && (!cs[i].discovery || cs[i].seen_before)) ||
+                     (want_novel && !cs[i].novel) || (want_followed && !cs[i].followed)))
                     continue;
                 if (std::any_of(out.begin(), out.end(),
                                 [&](const auto &x) { return same_moment(x.clip, cs[i].clip); }))
