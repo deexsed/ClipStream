@@ -19,6 +19,8 @@ import {
 import { Avatar } from "../../shared/ui/Primitives";
 import { useSession } from "../auth/Session";
 import useClipVote from "./useClipVote";
+import { twitchImageUrl } from "../../shared/twitchImage";
+import NewClipBadge from "./NewClipBadge";
 
 export default function ClipCard({
   clip,
@@ -47,10 +49,11 @@ export default function ClipCard({
       >
         {clip.thumbnail_url ? (
           <img
-            src={clip.thumbnail_url}
+            src={twitchImageUrl(clip.thumbnail_url)}
             alt=""
             loading={featured || priority ? "eager" : "lazy"}
-            fetchPriority={featured ? "high" : "auto"}
+            fetchPriority={featured || priority ? "high" : "auto"}
+            decoding="async"
           />
         ) : (
           <span className="thumbnail-fallback">
@@ -58,6 +61,7 @@ export default function ClipCard({
           </span>
         )}
         {rank && <span className="rank">{String(rank).padStart(2, "0")}</span>}
+        <NewClipBadge published={clip.twitch_created_at} />
         {clip.promo_label && (
           <span className="promotion-label">
             Продвижение · {clip.promo_label}

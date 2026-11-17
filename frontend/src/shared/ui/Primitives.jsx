@@ -3,6 +3,7 @@ import { AlertCircle, ArrowRight, Loader2, Play, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motionSettings } from "./Reveal";
 import { rememberDialogFocus, restoreDialogFocus } from "./dialogFocus";
+import { twitchImageUrl } from "../twitchImage";
 
 export function Button({
   children,
@@ -96,8 +97,10 @@ export function Avatar({ user, size = "", ...props }) {
   return user?.avatar_url || user?.profile_image_url ? (
     <img
       className={`avatar ${size}`}
-      src={user.avatar_url || user.profile_image_url}
+      src={twitchImageUrl(user.avatar_url || user.profile_image_url)}
       alt=""
+      loading="lazy"
+      decoding="async"
       {...props}
     />
   ) : (

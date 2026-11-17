@@ -11,6 +11,10 @@ export default defineConfig({
     port: 3000,
     host: "127.0.0.1",
     proxy: {
+      "/media/twitch/": {
+        target: process.env.API_PROXY_TARGET || "http://127.0.0.1:80",
+        changeOrigin: true,
+      },
       "/api": {
         target: process.env.API_PROXY_TARGET || "http://127.0.0.1:80",
         changeOrigin: true,

@@ -35,6 +35,7 @@ import { useSession } from "../auth/Session";
 import { Preroll } from "../ads/Advertisement";
 import { TwitchClip } from "./ClipPage";
 import Comments from "./Comments";
+import { twitchImageUrl } from "../../shared/twitchImage";
 
 export default function ClipRushPage() {
   const { languageKey } = usePreferences();
@@ -298,7 +299,12 @@ function RushFeed({ languageKey, sort }) {
               />
             ) : (
               <div className="rush-card rush-idle" aria-hidden="true">
-                <img src={clip.thumbnail_url} alt="" loading="lazy" />
+                <img
+                  src={twitchImageUrl(clip.thumbnail_url)}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                />
                 <p>{clip.title}</p>
               </div>
             )}

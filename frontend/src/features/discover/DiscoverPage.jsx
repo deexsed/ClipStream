@@ -1,4 +1,5 @@
 import { useRecommendationFeed } from "../../shared/api/recommendations";
+import { twitchImageUrl } from "../../shared/twitchImage";
 import Select from "../../shared/ui/Select";
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
@@ -185,7 +186,12 @@ export default function DiscoverPage({ mode }) {
             {stripGames.slice(0, 10).map((game) => (
               <Link key={game.id} to={`/category/${game.id}`}>
                 {game.box_art ? (
-                  <img src={game.box_art} alt="" />
+                  <img
+                    src={twitchImageUrl(game.box_art)}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                  />
                 ) : (
                   <Gamepad2 size={18} />
                 )}
@@ -217,7 +223,12 @@ export default function DiscoverPage({ mode }) {
               >
                 <div>
                   {game.box_art ? (
-                    <img src={game.box_art} alt="" loading="lazy" />
+                    <img
+                      src={twitchImageUrl(game.box_art)}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                    />
                   ) : (
                     <Gamepad2 size={40} />
                   )}

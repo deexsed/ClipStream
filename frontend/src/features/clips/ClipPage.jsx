@@ -40,6 +40,7 @@ import { useSession } from "../auth/Session";
 import ClipCard from "./ClipCard";
 import Comments from "./Comments";
 import { Preroll } from "../ads/Advertisement";
+import { twitchImageUrl } from "../../shared/twitchImage";
 
 export default function ClipPage({ feed = false }) {
   const { id: routeId } = useParams();
@@ -394,7 +395,13 @@ export function TwitchClip({ clip, autoplay = false, muted = false }) {
           target="_blank"
           rel="noopener noreferrer"
         >
-          {clip.thumbnail_url && <img src={clip.thumbnail_url} alt="" />}
+          {clip.thumbnail_url && (
+            <img
+              src={twitchImageUrl(clip.thumbnail_url)}
+              alt=""
+              decoding="async"
+            />
+          )}
           <span className="external-play">
             <Play size={22} fill="currentColor" /> Смотреть на Twitch{" "}
             <ArrowUpRight size={16} />

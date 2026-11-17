@@ -1,4 +1,5 @@
 import Select from "../../shared/ui/Select";
+import { twitchImageUrl } from "../../shared/twitchImage";
 import { useEffect, useState } from "react";
 import {
   Link,
@@ -869,7 +870,13 @@ function Activity({ userId }) {
 
 function PlayPreview({ src }) {
   return src ? (
-    <img className="small-preview" src={src} alt="" loading="lazy" />
+    <img
+      className="small-preview"
+      src={twitchImageUrl(src)}
+      alt=""
+      loading="lazy"
+      decoding="async"
+    />
   ) : (
     <div className="small-preview" />
   );

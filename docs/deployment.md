@@ -45,6 +45,16 @@ docker build -f backend/Dockerfile -t clipstream-backend:lifecycle .
 pwsh backend/tests/startup-lifecycle.ps1 -BackendImage clipstream-backend:lifecycle
 ```
 
+## Превью и аватарки Twitch
+
+Публичные растровые изображения Twitch загружаются через `/media/twitch/<cdn-host>/<path>` на edge Nginx. Это позволяет браузеру использовать соединение с ClipStream, а Nginx — общий кеш для повторяющихся превью, аватарок и обложек категорий. В Vite dev этот маршрут также проксируется на `API_PROXY_TARGET`.
+
+Разрешены только HTTPS-источники `static-cdn.jtvnw.net`, `clips-media-assets.twitch.tv`, `clips-media-assets2.twitch.tv` и расширения JPEG/PNG/WebP/GIF/AVIF. Nginx проверяет TLS; cookies, Authorization и gateway secret на CDN не передаются. SVG, видео, произвольные домены и методы записи не проксируются. Для ответа действует CSP sandbox, а срок браузерного кеширования сохраняется из заголовков CDN.
+
+Кеш каждого edge хранится в `/tmp`, с `max_size=128m`, удалением неиспользуемых записей через 24 часа и блокировкой параллельной загрузки одного файла. Срок свежести задаёт CDN; при отсутствии его указаний для HTTP 200 используется 24 часа. При сетевой ошибке доступна устаревшая копия. После перезапуска контейнера кеш пуст, первый запрос вновь обращается к CDN. Это кеш изображений, а не видео или ответов Helix; импорт, пороги 5/50 и квоты Twitch API не изменяются. Диагностический заголовок `X-Image-Cache` показывает `MISS`/`HIT`/`STALE`.
+
+При изменении nginx config в Swarm используйте новую `CLIPSTREAM_CONFIG_VERSION`, как описано ниже. Worker и API для этих изменений пересобирать не требуется.
+
 ## Просмотр из локальной сети
 
 В `.env` задайте `HTTP_BIND=0.0.0.0` и примените настройку командой `docker compose up -d --no-deps nginx`. Открывайте `http://<IPv4 компьютера>` (при нестандартном `HTTP_PORT` добавьте порт). В брандмауэре разрешите входящий TCP-порт только из локальной подсети. При смене IP адрес для подключения также меняется.
