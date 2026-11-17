@@ -12,6 +12,8 @@ class AccountSecurityRepository {
     void restrict_user(uint64_t actor, uint64_t target, const std::string &action, unsigned hours,
                        const std::string &reason);
     nlohmann::json user_state(uint64_t actor, uint64_t target);
+    nlohmann::json find_users(uint64_t actor, const std::string &search, const std::string &status,
+                              uint32_t limit, uint32_t offset);
     nlohmann::json ip_bans(uint64_t actor, uint32_t limit, uint32_t offset);
     uint64_t ban_ip(uint64_t actor, const std::string &ip, unsigned hours, const std::string &reason,
                     const std::string &actor_ip);

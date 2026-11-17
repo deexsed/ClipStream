@@ -21,7 +21,7 @@ class CommentRepository : public IRepository<models::Comment> {
                                               const std::string &sort, uint64_t viewer_user_id,
                                               uint64_t parent_id = 0);
     std::vector<models::Comment> find_replies(uint64_t parent_id, uint64_t viewer_user_id);
-    bool remove_authorized(uint64_t id, uint64_t actor);
+    bool remove_authorized(uint64_t id, uint64_t actor, const std::string &reason = "");
     bool set_comment_vote(uint64_t user_id, uint64_t comment_id, int vote);
 
   private:

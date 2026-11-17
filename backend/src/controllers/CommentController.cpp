@@ -209,7 +209,8 @@ server::Response CommentController::handle_delete(const server::Request &req) {
     if (!is_owner && !is_staff)
         return {403, {{"error", "Forbidden"}}};
 
-    if (!repo_.remove_authorized(id, req.user_id))
+    const auto reason = req.body.is_object() ? req.body.value("reason", std::string{}) : std::string{};
+    if (!repo_.remove_authorized(id, req.user_id, reason))
         return {404, {{"error", "Comment not found"}}};
     return {200, {{"ok", true}}};
 }

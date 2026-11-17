@@ -99,6 +99,8 @@ bool AccountSecurityRepository::is_ip_banned(const std::string &value) {
 void AccountSecurityRepository::restrict_user(uint64_t actor, uint64_t target, const std::string &action,
                                               unsigned hours, const std::string &reason) {
     return database::retry_transaction([&]() -> void {
+        if (reason.size() > 512 || reason.find_first_not_of(" \t\r\n") == std::string::npos)
+            throw std::invalid_argument("A non-empty reason of at most 512 bytes is required");
         if (hours > 8760)
             throw std::invalid_argument("Duration must not exceed 8760 hours");
         database::ScopedConnection conn(pool_);
@@ -157,6 +159,69 @@ void AccountSecurityRepository::restrict_user(uint64_t actor, uint64_t target, c
         tx.commit();
     });
 }
+nlohmann::json AccountSecurityRepository::find_users(uint64_t actor, const std::string &search,
+                                                     const std::string &status, uint32_t limit,
+                                                     uint32_t offset) {
+    database::ScopedConnection conn(pool_);
+    auto c = conn.raw();
+    const bool admin = staff_role(c, actor) == "admin";
+    if (search.size() > 256)
+        throw std::invalid_argument("Search must not exceed 256 bytes");
+    std::string where = "1=1";
+    if (!search.empty()) {
+        std::string literal;
+        for (char ch : search) {
+            if (ch == '!' || ch == '%' || ch == '_')
+                literal += '!';
+            literal += ch;
+        }
+        const auto pattern = quoted(c, "%" + literal + "%") + " ESCAPE '!'";
+        where += " AND (username LIKE " + pattern;
+        if (admin)
+            where += " OR email LIKE " + pattern;
+        where += ")";
+    }
+    const std::string suspended = "(account_suspended_until>UTC_TIMESTAMP())";
+    const std::string chat = "(chat_banned_permanently=1 OR chat_banned_until>UTC_TIMESTAMP())";
+    if (status == "blocked")
+        where += " AND account_blocked=1";
+    else if (status == "suspended")
+        where += " AND account_blocked=0 AND " + suspended;
+    else if (status == "chat")
+        where += " AND " + chat;
+    else if (status == "active")
+        where += " AND account_blocked=0 AND (account_suspended_until IS NULL OR "
+                 "account_suspended_until<=UTC_TIMESTAMP())";
+    else if (!status.empty())
+        throw std::invalid_argument("Unknown account status");
+    auto count = "SELECT COUNT(*) FROM users WHERE " + where;
+    database::query(c, count.c_str());
+    database::Result counted(mysql_store_result(c));
+    const auto total = std::stoull(mysql_fetch_row(counted)[0]);
+    counted.reset();
+    limit = std::clamp(limit, 1u, 100u);
+    auto sql = "SELECT id,username,avatar_url,`role`,created_at,account_blocked,"
+               "account_suspended_until,chat_banned_permanently,chat_banned_until," +
+               std::string(admin ? "email" : "NULL") + " FROM users WHERE " + where +
+               " ORDER BY id DESC LIMIT " + number(limit) + " OFFSET " + number(offset);
+    database::query(c, sql.c_str());
+    database::Result result(mysql_store_result(c));
+    auto rows = nlohmann::json::array();
+    while (auto r = mysql_fetch_row(result)) {
+        rows.push_back({{"id", std::stoull(r[0])},
+                        {"username", r[1]},
+                        {"avatar_url", r[2] ? r[2] : ""},
+                        {"role", r[3]},
+                        {"created_at", r[4]},
+                        {"account_blocked", std::string(r[5]) == "1"},
+                        {"account_suspended_until", r[6] ? nlohmann::json(r[6]) : nlohmann::json(nullptr)},
+                        {"chat_banned_permanently", std::string(r[7]) == "1"},
+                        {"chat_banned_until", r[8] ? nlohmann::json(r[8]) : nlohmann::json(nullptr)}});
+        if (admin)
+            rows.back()["email"] = r[9] ? r[9] : "";
+    }
+    return {{"users", rows}, {"total", total}, {"has_more", offset + rows.size() < total}};
+}
 nlohmann::json AccountSecurityRepository::user_state(uint64_t actor, uint64_t target) {
     database::ScopedConnection conn(pool_);
     auto c = conn.raw();
@@ -201,6 +266,8 @@ nlohmann::json AccountSecurityRepository::ip_bans(uint64_t actor, uint32_t limit
 uint64_t AccountSecurityRepository::ban_ip(uint64_t actor, const std::string &value, unsigned hours,
                                            const std::string &reason, const std::string &actor_ip) {
     return database::retry_transaction([&]() -> uint64_t {
+        if (reason.size() > 512 || reason.find_first_not_of(" \t\r\n") == std::string::npos)
+            throw std::invalid_argument("A non-empty reason of at most 512 bytes is required");
         auto ip = utils::normalize_ip(value);
         if (ip == utils::normalize_ip(actor_ip))
             throw std::invalid_argument("Cannot ban your own IP address");
@@ -241,8 +308,11 @@ nlohmann::json AccountSecurityRepository::audit(uint64_t actor, uint32_t limit, 
     database::ScopedConnection conn(pool_);
     auto c = conn.raw();
     staff_role(c, actor);
-    auto q = "SELECT id,actor_id,target_type,target_id,action,reason,details,created_at FROM "
-             "moderation_audit ORDER BY id DESC LIMIT " +
+    auto q = "SELECT a.id,a.actor_id,a.target_type,a.target_id,a.action,a.reason,a.details,a.created_at,"
+             "actor.username,target.username FROM moderation_audit a "
+             "LEFT JOIN users actor ON actor.id=a.actor_id "
+             "LEFT JOIN users target ON a.target_type='user' AND target.id=CAST(a.target_id AS UNSIGNED) "
+             "ORDER BY a.id DESC LIMIT " +
              number(std::min(limit, 100u)) + " OFFSET " + number(offset);
     database::query(c, q.c_str());
     database::Result result(mysql_store_result(c));
@@ -255,6 +325,8 @@ nlohmann::json AccountSecurityRepository::audit(uint64_t actor, uint32_t limit, 
                        {"action", r[4]},
                        {"reason", r[5]},
                        {"details", r[6] ? nlohmann::json::parse(r[6]) : nlohmann::json(nullptr)},
+                       {"actor_username", r[8] ? r[8] : ""},
+                       {"target_username", r[9] ? r[9] : ""},
                        {"created_at", r[7]}});
     return out;
 }

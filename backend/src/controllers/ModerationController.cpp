@@ -31,6 +31,17 @@ ModerationController::ModerationController(repositories::AccountSecurityReposito
                                            services::CacheService &cache)
     : security_(security), cache_(cache) {}
 void ModerationController::register_routes(server::Router &router) {
+    router.get("/moderation/users", [this](const server::Request &req) -> server::Response {
+        if (!req.user_id)
+            return {401, {{"error", "Unauthorized"}}};
+        auto value = [&](const char *key) {
+            auto it = req.query.find(key);
+            return it == req.query.end() ? std::string{} : it->second;
+        };
+        return {200,
+                security_.find_users(req.user_id, value("q"), value("status"),
+                                     std::clamp(page(req, "limit", 30), 1u, 100u), page(req, "offset", 0))};
+    });
     router.post("/moderation/reports/:id/resolve", [this](const server::Request &req) -> server::Response {
         if (!req.user_id)
             return {401, {{"error", "Unauthorized"}}};

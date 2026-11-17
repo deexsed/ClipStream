@@ -1790,8 +1790,12 @@ bool ClipRepository::insert_content_report(uint64_t reporter_id, const std::stri
 
 std::vector<nlohmann::json> ClipRepository::list_content_reports(uint32_t limit, uint32_t offset) {
     database::ScopedConnection conn(pool_);
-    std::string sql = "SELECT id, reporter_id, target_type, target_id, reason, status, created_at "
-                      "FROM content_reports WHERE status='open' ORDER BY created_at DESC LIMIT " +
+    std::string sql = "SELECT r.id,r.reporter_id,r.target_type,r.target_id,r.reason,r.status,r.created_at,"
+                      "u.username,c.clip_id,c.user_id,c.body,cl.title "
+                      "FROM content_reports r LEFT JOIN users u ON u.id=r.reporter_id "
+                      "LEFT JOIN comments c ON r.target_type='comment' AND c.id=r.target_id "
+                      "LEFT JOIN clips cl ON r.target_type='clip' AND cl.id=r.target_id "
+                      "WHERE r.status='open' ORDER BY r.created_at DESC,r.id DESC LIMIT " +
                       std::to_string(limit) + " OFFSET " + std::to_string(offset);
     if (database::query(conn.raw(), sql.c_str()))
         return {};
@@ -1842,6 +1846,11 @@ void ClipRepository::log_compliance(const std::string &action, uint64_t clip_id,
 
 std::vector<nlohmann::json> ClipRepository::get_user_recent_view_activity(uint64_t user_id, uint32_t limit,
                                                                           uint32_t offset) {
+            {"reporter_username", row[7] ? row[7] : ""},
+            {"clip_id", row[8] ? nlohmann::json(std::stoull(row[8])) : nlohmann::json(nullptr)},
+            {"subject_user_id", row[9] ? nlohmann::json(std::stoull(row[9])) : nlohmann::json(nullptr)},
+            {"comment_content", row[10] ? row[10] : ""},
+            {"clip_title", row[11] ? row[11] : ""},
     database::ScopedConnection conn(pool_);
     std::ostringstream sql;
     sql << "SELECT vh.viewed_at, c.id, c.title, c.thumbnail_url, c.broadcaster_name, c.twitch_clip_id "

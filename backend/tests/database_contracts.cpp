@@ -250,7 +250,27 @@ int main() {
         require(security.bootstrap_admin(a->user.id, a->user.twitch_id), "Canonical Twitch bootstrap failed");
         require(!security.bootstrap_admin(b->user.id, b->user.twitch_id), "Bootstrap was not singleton");
         require(auth.get_user(a->user.id)->role == models::UserRole::Admin, "Bootstrap role missing");
+        const auto directory = security.find_users(a->user.id, b->user.username, "", 30, 0);
+        require(directory["total"] == 1 && directory["users"][0]["id"] == b->user.id &&
+                    directory["users"][0].contains("email"),
+                "Admin account directory lookup failed");
+        require(security.find_users(a->user.id, "%", "", 30, 0)["total"] == 0,
+                "Account search treated a literal percent as wildcard");
+        bool directory_denied = false;
+        try {
+            security.find_users(b->user.id, "", "", 30, 0);
+        } catch (const utils::PermissionDenied &) {
+            directory_denied = true;
+        }
+        require(directory_denied, "Regular user accessed the staff directory");
+        users.update_role(b->user.id, models::UserRole::Moderator, a->user.id);
+        const auto moderator_view = security.find_users(b->user.id, a->user.username, "", 30, 0);
+        require(moderator_view["total"] == 1 && !moderator_view["users"][0].contains("email"),
+                "Moderator directory disclosed email addresses");
+        users.update_role(b->user.id, models::UserRole::User, a->user.id);
         security.restrict_user(a->user.id, b->user.id, "chat_ban", 0, "regression permanent chat ban");
+        require(security.find_users(a->user.id, b->user.username, "chat", 30, 0)["total"] == 1,
+                "Permanent discussion restriction missing from directory filter");
         const auto permanent = security.user_state(a->user.id, b->user.id);
         require(permanent["chat_banned_permanently"] == true && permanent["chat_banned_until"].is_null(),
                 "Permanent ban has an expiry");
@@ -276,11 +296,20 @@ int main() {
                 "Lifting chat ban did not restore posting");
         auto old_b = auth.renew_token(b->user.id);
         security.restrict_user(a->user.id, b->user.id, "block_account", 0, "regression permanent ban");
+        require(security.find_users(a->user.id, b->user.username, "blocked", 30, 0)["total"] == 1 &&
+                    security.find_users(a->user.id, b->user.username, "active", 30, 0)["total"] == 0,
+                "Directory account filters disagree with account access");
+        const auto audit = security.audit(a->user.id, 30, 0);
+        require(audit[0]["actor_username"] == a->user.username &&
+                    audit[0]["target_username"] == b->user.username,
+                "Audit user identity missing");
         require(!auth.verify_token(old_b), "Permanent ban failed to revoke JWT");
         security.restrict_user(a->user.id, b->user.id, "unblock_account", 0, "regression unblock");
         require(!auth.verify_token(old_b), "Unblock restored revoked JWT");
         old_b = auth.renew_token(b->user.id);
         security.restrict_user(a->user.id, b->user.id, "suspend_account", 1, "regression suspension");
+        require(security.find_users(a->user.id, b->user.username, "suspended", 30, 0)["total"] == 1,
+                "Suspended account missing from directory filter");
         require(!auth.verify_token(old_b), "Suspension failed to revoke JWT");
         security.restrict_user(a->user.id, b->user.id, "unblock_account", 0, "regression unblock");
         require(!auth.verify_token(old_b), "Unblock revived revoked JWT");
@@ -370,8 +399,32 @@ int main() {
         clips.insert_content_report(b->user.id, "clip", clip, "Fixture report");
         auto reports = clips.list_content_reports(10, 0);
         require(!reports.empty(), "Report missing");
+        require(reports.front()["target_type"] == "clip" && reports.front()["target_id"] == clip &&
+                    reports.front()["reporter_username"] == b->user.username &&
+                    reports.front()["clip_title"] == visible.title,
+                "Report context missing");
         security.resolve_report(a->user.id, reports.front()["id"].get<uint64_t>(), "actioned",
                                 "fixture resolved");
+        {
+            models::Comment reported;
+            reported.clip_id = clip;
+            reported.user_id = b->user.id;
+            reported.body = "Reported comment body";
+            const auto comment = comments.create(reported);
+            clips.insert_content_report(a->user.id, "comment", comment, "Comment report");
+            const auto queue = clips.list_content_reports(10, 0);
+            require(queue.front()["target_type"] == "comment" && queue.front()["clip_id"] == clip &&
+                        queue.front()["subject_user_id"] == b->user.id &&
+                        queue.front()["comment_content"] == reported.body,
+                    "Comment report context missing");
+            require(comments.remove_authorized(comment, a->user.id, "Confirmed report"),
+                    "Staff could not remove reported comment");
+            const auto events = security.audit(a->user.id, 1, 0);
+            require(events[0]["action"] == "delete_comment" && events[0]["reason"] == "Confirmed report" &&
+                        events[0]["details"]["clip_id"] == clip,
+                    "Comment removal audit missing");
+            security.resolve_report(a->user.id, queue.front()["id"].get<uint64_t>(), "actioned", "Removed");
+        }
         {
             auto before = clips.find_by_id(clip)->view_count;
             services::ClipService service(clips, users, cache);

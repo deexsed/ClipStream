@@ -297,8 +297,10 @@ bool CommentRepository::update(const models::Comment &comment) {
 }
 
 bool CommentRepository::remove(uint64_t id) { return remove_authorized(id, 0); }
-bool CommentRepository::remove_authorized(uint64_t id, uint64_t actor) {
+bool CommentRepository::remove_authorized(uint64_t id, uint64_t actor, const std::string &reason) {
     return database::retry_transaction([&]() -> bool {
+        if (reason.size() > 512)
+            throw std::invalid_argument("Reason must not exceed 512 bytes");
         database::ScopedConnection conn(pool_);
         auto c = conn.raw();
         database::Transaction tx(c);
@@ -337,6 +339,15 @@ bool CommentRepository::remove_authorized(uint64_t id, uint64_t actor) {
             return false;
         if (root)
             reputation(c, owner, author, -3);
+        if (actor && actor != author) {
+            const auto audit =
+                "INSERT INTO moderation_audit(actor_id,target_type,target_id,action,reason,details) "
+                "VALUES(" +
+                std::to_string(actor) + ",'comment','" + std::to_string(id) + "','delete_comment','" +
+                database::escape(c, reason) + "','" +
+                database::escape(c, nlohmann::json({{"clip_id", clip}}).dump()) + "')";
+            database::query(c, audit.c_str());
+        }
         mark_recommendation_dirty(c,author,clip);
         tx.commit();
         return true;
