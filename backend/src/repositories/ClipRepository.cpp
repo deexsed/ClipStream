@@ -303,12 +303,6 @@ std::vector<models::Clip> ClipRepository::find_filtered(const ClipFilter &filter
     auto esc = [&](const std::string &s) { return database::escape(conn.raw(), s); };
     auto terms = split_terms(filter.search);
     std::ostringstream sql;
-    sql << " FROM clips c LEFT JOIN " << promo_boost_subquery("'all','feed'")
-        << " ON promo.clip_id=c.id";
-
-    if (!filter.tag.empty())
-        sql << " JOIN clip_tags ct ON c.id=ct.clip_id JOIN tags t ON ct.tag_id=t.id";
-
     sql << " WHERE 1=1";
 
     append_game_filter(sql, filter.game_ids);
@@ -420,7 +414,28 @@ std::vector<models::Clip> ClipRepository::find_filtered(const ClipFilter &filter
         inner_order << key << " DESC";
         outer_order << "ranked." << key << " DESC";
     }
-    const auto query = "SELECT c.*,g.name AS game_name FROM (" + selection.str() + sql.str() +
+    const auto where = sql.str();
+    std::string cte, from = " FROM clips c", ranked_where = where;
+    if (filter.period == TimePeriod::Week && filter.sort == ClipSort::Recent && filter.game_ids.empty() &&
+        filter.tag.empty() && filter.search.empty() && filter.broadcaster_name.empty() && limit != 0) {
+        // Timestamp is the primary sort key. Fetch the ordered prefix and all
+        // remaining ties at its boundary before applying promotion/view order.
+        const auto prefix_size = static_cast<uint64_t>(offset) + limit;
+        cte = "WITH recent_prefix AS (SELECT c.id,c.twitch_created_ts FROM clips c "
+              "FORCE INDEX (idx_clips_recent_order)" + where +
+              " ORDER BY c.twitch_created_ts DESC,c.id DESC LIMIT " + std::to_string(prefix_size) +
+              "), boundary AS (SELECT id,twitch_created_ts FROM recent_prefix "
+              "ORDER BY twitch_created_ts,id LIMIT 1), candidates AS (SELECT id FROM recent_prefix UNION ALL "
+              "SELECT c.id FROM boundary b STRAIGHT_JOIN clips c ON c.twitch_created_ts=b.twitch_created_ts "
+              "AND c.id<b.id" + where + ") ";
+        from = " FROM candidates candidate STRAIGHT_JOIN clips c ON c.id=candidate.id";
+        ranked_where.clear();
+    }
+    from += " LEFT JOIN " + promo_boost_subquery("'all','feed'") + " ON promo.clip_id=c.id";
+    if (!filter.tag.empty())
+        from += " JOIN clip_tags ct ON c.id=ct.clip_id JOIN tags t ON ct.tag_id=t.id";
+
+    const auto query = cte + "SELECT c.*,g.name AS game_name FROM (" + selection.str() + from + ranked_where +
                        " ORDER BY " + inner_order.str() + " LIMIT " + std::to_string(limit) +
                        " OFFSET " + std::to_string(offset) + ") ranked JOIN clips c ON c.id=ranked.id "
                        "LEFT JOIN games g ON g.id=c.game_id ORDER BY " + outer_order.str();

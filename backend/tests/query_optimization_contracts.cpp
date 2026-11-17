@@ -224,6 +224,15 @@ static void feed_contracts(database::ConnectionPool& pool, Fixtures& fixtures) {
     check(hydrated.size() == 3 && hydrated[0].game_name == "Query contracts" &&
               hydrated[0].title == "Query fixture" && hydrated[0].view_count == 10,
           "Late hydration lost clip or game fields");
+    filter.game_ids.clear();
+    filter.sort = repositories::ClipSort::Recent;
+    const auto promoted = tied.back();
+    exec(pool, "INSERT INTO clip_promotions(clip_id,boost_score,placement) VALUES(" +
+                   std::to_string(promoted) + ",20,'feed')");
+    check(ids(1) == std::vector<uint64_t>{promoted}, "Index prefix lost a promoted timestamp tie");
+    check(ids(2, 1, &mutes) == std::vector<uint64_t>({tied[2], tied[3]}),
+          "Indexed pagination lost its ordering or mute filters");
+    check(ids(1, 99).empty(), "Indexed pagination must allow offsets beyond the result set");
     fixtures.clear();
 
     const auto title_match = fixtures.clip("'2026-11-17T11:00:00Z'", 10);
