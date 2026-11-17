@@ -7,10 +7,12 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstring>
 #include <deque>
 #include <functional>
 #include <iomanip>
+#include <iostream>
 #include <nlohmann/json.hpp>
 #include <random>
 #include <sstream>
@@ -301,9 +303,8 @@ std::vector<models::Clip> ClipRepository::find_filtered(const ClipFilter &filter
     auto esc = [&](const std::string &s) { return database::escape(conn.raw(), s); };
     auto terms = split_terms(filter.search);
     std::ostringstream sql;
-    sql << "SELECT c.*, g.name AS game_name FROM clips c "
-        << "LEFT JOIN games g ON c.game_id=g.id "
-        << "LEFT JOIN " << promo_boost_subquery("'all','feed'") << " ON promo.clip_id=c.id";
+    sql << " FROM clips c LEFT JOIN " << promo_boost_subquery("'all','feed'")
+        << " ON promo.clip_id=c.id";
 
     if (!filter.tag.empty())
         sql << " JOIN clip_tags ct ON c.id=ct.clip_id JOIN tags t ON ct.tag_id=t.id";
@@ -334,7 +335,7 @@ std::vector<models::Clip> ClipRepository::find_filtered(const ClipFilter &filter
         sql << ")";
     }
 
-    const char *twitch_dt = "STR_TO_DATE(c.twitch_created_at, '%Y-%m-%dT%H:%i:%sZ')";
+    const char *twitch_dt = "c.twitch_created_ts";
     switch (filter.period) {
     case TimePeriod::Today:
         sql << " AND " << twitch_dt << " >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY)";
@@ -388,26 +389,53 @@ std::vector<models::Clip> ClipRepository::find_filtered(const ClipFilter &filter
 
     append_public_feed_filters(sql, mutes, esc);
 
-    // Сортировка (при поиске сначала релевантность, потом выбранная сортировка)
-    sql << " ORDER BY ";
+    // Sort compact IDs/keys first. Hydrate the wide clip rows and game names
+    // only after pagination, avoiding a full-row filesort on cold catalog reads.
+    std::vector<std::string> ordering;
     if (!search_score.empty())
-        sql << search_score << " DESC, COALESCE(promo.promo_boost,0) DESC, ";
+        ordering = {search_score, "COALESCE(promo.promo_boost,0)"};
     switch (filter.sort) {
     case ClipSort::Popular:
-        sql << "(c.view_count * 1.0 + COALESCE(promo.promo_boost, 0) * 14.0) DESC, " << twitch_dt << " DESC";
+        ordering.push_back("(c.view_count * 1.0 + COALESCE(promo.promo_boost, 0) * 14.0)");
+        ordering.push_back(twitch_dt);
         break;
     case ClipSort::Recent:
-        sql << twitch_dt << " DESC, COALESCE(promo.promo_boost,0) DESC, c.view_count DESC";
+        ordering.insert(ordering.end(), {twitch_dt, "COALESCE(promo.promo_boost,0)", "c.view_count"});
         break;
     case ClipSort::Duration:
-        sql << "c.duration DESC, COALESCE(promo.promo_boost,0) DESC, c.view_count DESC";
+        ordering.insert(ordering.end(), {"c.duration", "COALESCE(promo.promo_boost,0)", "c.view_count"});
         break;
     }
-
-    sql << " LIMIT " << limit << " OFFSET " << offset;
-
-    if (database::query(conn.raw(), sql.str().c_str()))
-        return {};
+    // Keep equal-key pagination deterministic in both query stages.
+    ordering.push_back("c.id");
+    std::ostringstream selection, inner_order, outer_order;
+    selection << "SELECT c.id";
+    for (size_t i = 0; i < ordering.size(); ++i) {
+        const auto key = "sort_key_" + std::to_string(i);
+        selection << ',' << ordering[i] << " AS " << key;
+        if (i) {
+            inner_order << ',';
+            outer_order << ',';
+        }
+        inner_order << key << " DESC";
+        outer_order << "ranked." << key << " DESC";
+    }
+    const auto query = "SELECT c.*,g.name AS game_name FROM (" + selection.str() + sql.str() +
+                       " ORDER BY " + inner_order.str() + " LIMIT " + std::to_string(limit) +
+                       " OFFSET " + std::to_string(offset) + ") ranked JOIN clips c ON c.id=ranked.id "
+                       "LEFT JOIN games g ON g.id=c.game_id ORDER BY " + outer_order.str();
+    const auto query_started = std::chrono::steady_clock::now();
+    try {
+        database::query(conn.raw(), query.c_str());
+    } catch (const database::Error& error) {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - query_started).count();
+        std::cerr << "[Feed] selection failed code=" << error.code
+                  << " period=" << static_cast<int>(filter.period)
+                  << " sort=" << static_cast<int>(filter.sort) << " limit=" << limit
+                  << " offset=" << offset << " elapsed_ms=" << elapsed << '\n';
+        throw;
+    }
 
     database::Result res(mysql_store_result(conn.raw()));
     if (!res)

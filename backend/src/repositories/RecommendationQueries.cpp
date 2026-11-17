@@ -317,8 +317,12 @@ void ClipRepository::refresh_dirty_recommendation_features() {
     std::vector<std::pair<uint64_t, uint64_t>> versions;
     {
         database::ScopedConnection conn(pool_);
-        database::query(conn.raw(), "SELECT clip_id,generation FROM recommendation_dirty_clips "
-                                    "ORDER BY queued_at,clip_id LIMIT 200");
+        // Limit the covering index scan before fetching generation by primary key.
+        database::query(conn.raw(), "SELECT q.clip_id,d.generation FROM "
+                                    "(SELECT clip_id,queued_at FROM recommendation_dirty_clips "
+                                    "ORDER BY queued_at,clip_id LIMIT 200) q "
+                                    "JOIN recommendation_dirty_clips d ON d.clip_id=q.clip_id "
+                                    "ORDER BY q.queued_at,q.clip_id");
         database::Result res(mysql_store_result(conn.raw()));
         while (auto row = mysql_fetch_row(res)) {
             ids.push_back(std::stoull(row[0]));

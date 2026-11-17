@@ -64,3 +64,4 @@ Backend собирается через `backend/Dockerfile`; CMake включа
 - [Документы и некоммерческий запуск](docs/legal-operations.md)
 - [Развёртывание и масштабирование](docs/deployment.md)
 - [Результаты проверки и ограничения](docs/validation.md)
+- [Оптимизации MySQL и регрессионные тесты запросов](docs/mysql-query-optimizations.md)

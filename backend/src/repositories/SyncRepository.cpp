@@ -326,17 +326,20 @@ nlohmann::json SyncRepository::dashboard() {
                           {"last_import_at", r[5] ? json(r[5]) : json(nullptr)},
                           {"categories_known", num(r, 6)}};
     res.reset();
-    // A dense, UTC-aligned series; includes imports before the new counters were
-    // installed.
+    // Aggregate the indexed time range once, then fill missing UTC hours.
     exec(c, "WITH RECURSIVE hours AS (SELECT "
             "TIMESTAMP(DATE_FORMAT(UTC_TIMESTAMP()-INTERVAL 23 HOUR,"
             "'%Y-%m-%d %H:00:00')) AS hour UNION ALL SELECT hour+INTERVAL 1 HOUR "
             "FROM hours WHERE "
             "hour<TIMESTAMP(DATE_FORMAT(UTC_TIMESTAMP(),'%Y-%m-%d %H:00:00'))) "
-            "SELECT DATE_FORMAT(h.hour,'%Y-%m-%dT%H:%i:%sZ'),COUNT(c.id) FROM "
-            "hours h LEFT JOIN clips c "
-            "ON c.created_at>=h.hour AND c.created_at<h.hour+INTERVAL 1 HOUR "
-            "GROUP BY h.hour ORDER BY h.hour");
+            "SELECT DATE_FORMAT(h.hour,'%Y-%m-%dT%H:%i:%sZ'),COALESCE(n.inserted,0) "
+            "FROM hours h LEFT JOIN ("
+            "SELECT TIMESTAMP(DATE_FORMAT(created_at,'%Y-%m-%d %H:00:00')) AS hour,"
+            "COUNT(*) AS inserted FROM clips "
+            "WHERE created_at>=TIMESTAMP(DATE_FORMAT(UTC_TIMESTAMP()-INTERVAL 23 HOUR,"
+            "'%Y-%m-%d %H:00:00')) AND "
+            "created_at<TIMESTAMP(DATE_FORMAT(UTC_TIMESTAMP(),'%Y-%m-%d %H:00:00'))+INTERVAL 1 HOUR "
+            "GROUP BY hour) n ON n.hour=h.hour ORDER BY h.hour");
     res = database::Result(mysql_store_result(c));
     while (auto r = mysql_fetch_row(res))
         out["hourly"].push_back({{"hour", r[0]}, {"inserted", num(r, 1)}});
