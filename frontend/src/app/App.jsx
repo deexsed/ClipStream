@@ -11,6 +11,7 @@ const Following = lazy(() => import("../features/social/FollowingPage"));
 const Console = lazy(() => import("../features/admin/ConsolePage"));
 const Legal = lazy(() => import("../features/legal/LegalPage"));
 const Callback = lazy(() => import("../features/auth/CallbackPage"));
+const NotFound = lazy(() => import("../features/errors/NotFoundPage"));
 
 export default function App() {
   return (
@@ -34,17 +35,7 @@ export default function App() {
           <Route path="admin" element={<Console admin />} />
           <Route path="legal/:slug?" element={<Legal />} />
           <Route path="auth/callback" element={<Callback />} />
-          <Route
-            path="*"
-            element={
-              <div className="page">
-                <Status empty="Такой страницы нет" />
-                <a className="button button-primary" href="/">
-                  На главную
-                </a>
-              </div>
-            }
-          />
+          <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
     </Suspense>
