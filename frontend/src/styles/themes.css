@@ -27,26 +27,12 @@
   --theme-danger-bg: #fce7ed;
   --theme-success-text: #287443;
 }
-:root[data-theme="light"] .button-primary {
-  background: #6043ae;
-  border-color: #6043ae;
-  color: #fff;
-}
 :root[data-theme="light"] .skip-link {
   color: #fff;
 }
 :root[data-theme="light"] :is(input, textarea)::placeholder {
   color: var(--muted);
   opacity: 1;
-}
-:root[data-theme="light"] .table-scroll {
-  background: var(--panel);
-}
-:root[data-theme="light"] th {
-  background: var(--raised);
-}
-:root[data-theme="light"] .header-search:focus-within {
-  background: #f3effb;
 }
 :root[data-theme="light"] .language-options label:has(input:checked) {
   background: #e9e2fa;
@@ -74,10 +60,6 @@
 :root[data-theme="light"] .player-container,
 :root[data-theme="light"] .preroll-video {
   background: #080809;
-}
-.clip-language-trigger,
-.clip-language-trigger .button-content {
-  gap: 7px;
 }
 .clip-language-value {
   color: var(--muted);
@@ -111,12 +93,6 @@
   color: var(--accent);
   background: var(--raised);
 }
-@media (hover: hover) and (pointer: fine) {
-  :root[data-theme="light"] .button-primary:hover:not(:disabled) {
-    background: #503595;
-    border-color: #503595;
-  }
-}
 @media (min-width: 681px) {
   .app-header {
     grid-template-columns: auto minmax(120px, 620px) auto;
@@ -127,11 +103,6 @@
 @media (min-width: 681px) and (max-width: 1000px) {
   .wordmark > span:last-child {
     display: none;
-  }
-}
-@media (pointer: coarse) {
-  .language-search input {
-    font-size: 16px;
   }
 }
 @media (max-width: 680px) {

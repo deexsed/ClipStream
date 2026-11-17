@@ -1,3 +1,4 @@
+import ExternalLink from "../../shared/ui/ExternalLink";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -50,17 +51,17 @@ function Disclosure({ ad }) {
 }
 function AdLink({ data, children, className = "" }) {
   return (
-    <a
+    <ExternalLink
       className={className}
       href={data.ad.click_url}
-      target="_blank"
-      rel="noopener noreferrer sponsored"
+
+      rel="sponsored"
       onClick={() => {
         acknowledge(data, "click").catch(() => {});
       }}
     >
       {children}
-    </a>
+    </ExternalLink>
   );
 }
 export default function Advertisement({
@@ -193,9 +194,13 @@ export function Preroll({ clipId, children }) {
         </Button>
       </div>
       {!started && (
-        <button className="text-link" onClick={() => setFinished(true)}>
+        <Button
+          variant="plain"
+          className="text-link"
+          onClick={() => setFinished(true)}
+        >
           Пропустить рекламу без воспроизведения
-        </button>
+        </Button>
       )}
     </section>
   );

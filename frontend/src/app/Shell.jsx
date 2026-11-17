@@ -1,3 +1,6 @@
+import { SectionHeading } from "../shared/ui/Layout";
+import { EmptyState } from "../shared/ui/Feedback";
+import { Field, Checkbox } from "../shared/ui/FormControls";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { isKeyboardNavigation, isSearchShortcut } from "../shared/input";
 import {
@@ -18,10 +21,8 @@ import {
   Languages,
   Moon,
   Sun,
-  LogOut,
   Play,
   Menu,
-  Search,
   Settings,
   Shield,
   UserRound,
@@ -50,6 +51,7 @@ import { date, twitchProfilePath } from "../shared/format";
 import { TWITCH_BROADCAST_LANGUAGES } from "../data/twitchLanguages";
 
 import useSidebar from "./useSidebar";
+import SearchField from "../shared/ui/SearchField";
 import brandMark from "../assets/clipstream-raccoon.svg?no-inline";
 
 const links = [
@@ -74,6 +76,15 @@ function ShellContent() {
   const navigate = useNavigate();
   const sidebar = useSidebar(location.pathname);
   const search = useRef(null);
+  const [globalSearch, setGlobalSearch] = useState(() =>
+    location.pathname === "/"
+      ? new URLSearchParams(location.search).get("q") || ""
+      : "",
+  );
+  useEffect(() => {
+    if (location.pathname === "/")
+      setGlobalSearch(new URLSearchParams(location.search).get("q") || "");
+  }, [location.pathname, location.search]);
   const [loginOpen, setLoginOpen] = useState(false);
   const [languagesOpen, setLanguagesOpen] = useState(false);
   const [languageSearch, setLanguageSearch] = useState("");
@@ -195,12 +206,12 @@ function ShellContent() {
             </div>
           )}
           <div className="side-group subscriptions">
-            <div className="section-label">
+            <SectionHeading>
               <p className="eyebrow">Подписки Twitch</p>
               <span className="muted">
                 {followed.data?.channels?.length || ""}
               </span>
-            </div>
+            </SectionHeading>
             {session.user ? (
               <Status
                 error={followed.error}
@@ -240,11 +251,15 @@ function ShellContent() {
             ) : (
               <>
                 <p className="side-note">
-                  Любимые каналы и рекомендации — после входа.
+                  Подписки Twitch доступны после входа.
                 </p>
-                <button className="text-link" onClick={openLogin}>
-                  Подключить Twitch <ChevronDown size={13} />
-                </button>
+                <Button
+                  variant="plain"
+                  className="text-link"
+                  onClick={openLogin}
+                >
+                  Войти <ChevronDown size={13} />
+                </Button>
               </>
             )}
           </div>
@@ -272,7 +287,7 @@ function ShellContent() {
       <header className="app-header">
         <div className="header-brand">
           <IconButton
-            className="icon-button sidebar-toggle"
+            className="sidebar-toggle"
             label={
               sidebar.expanded
                 ? "Свернуть боковую панель"
@@ -303,15 +318,23 @@ function ShellContent() {
             navigate(q ? `/?q=${encodeURIComponent(q)}` : "/");
           }}
         >
-          <Search size={18} />
-          <input
+          <SearchField
             ref={search}
+            value={globalSearch}
+            onValueChange={setGlobalSearch}
             name="q"
             aria-label="Поиск клипов, каналов и людей"
             placeholder="Клипы, каналы, люди"
-            type="search"
-            autoComplete="off"
-            enterKeyHint="search"
+            onClear={() => {
+              if (
+                location.pathname === "/" &&
+                new URLSearchParams(location.search).has("q")
+              ) {
+                const next = new URLSearchParams(location.search);
+                next.delete("q");
+                navigate({ pathname: "/", search: next.toString() });
+              }
+            }}
           />
         </form>
         <div className="header-actions">
@@ -413,7 +436,9 @@ function ShellContent() {
         {session.error && session.authenticated && (
           <div className="session-banner" role="status">
             Не удалось обновить профиль. Ваша сессия сохранена.{" "}
-            <button onClick={() => session.refresh()}>Повторить</button>
+            <Button variant="plain" onClick={() => session.refresh()}>
+              Повторить
+            </Button>
           </div>
         )}
         <Suspense fallback={<Status loading />}>
@@ -432,15 +457,15 @@ function ShellContent() {
           Фильтр по языку речи в клипах Twitch. Можно выбрать несколько языков.
           Язык интерфейса не меняется. Без выбора показываются все клипы.
         </p>
-        <label className="language-search">
+        <Field className="language-search">
           Найти язык
-          <input
-            type="search"
+          <SearchField
+            aria-label="Найти язык"
             value={languageSearch}
-            onChange={(event) => setLanguageSearch(event.target.value)}
+            onValueChange={setLanguageSearch}
             placeholder="Название или код: Русский, EN…"
           />
-        </label>
+        </Field>
         <div className="language-selection">
           <p className="muted" role="status">
             {languages.length
@@ -450,29 +475,29 @@ function ShellContent() {
           {selectedLanguages.length > 0 && (
             <div className="language-chips">
               {selectedLanguages.map(({ code, label }) => (
-                <button
+                <Button
+                  variant="plain"
                   key={code}
                   onClick={() => toggleLanguage(code)}
                   aria-label={`Убрать язык: ${label}`}
                 >
                   {label}
                   <X size={14} />
-                </button>
+                </Button>
               ))}
             </div>
           )}
         </div>
         <div className="language-options">
           {visibleLanguages.map(({ code, label }) => (
-            <label key={code}>
-              <input
-                type="checkbox"
-                checked={languages.includes(code)}
-                onChange={() => toggleLanguage(code)}
-              />
+            <Checkbox
+              key={code}
+              checked={languages.includes(code)}
+              onChange={() => toggleLanguage(code)}
+            >
               {label}
               <span>{code.toUpperCase()}</span>
-            </label>
+            </Checkbox>
           ))}
         </div>
         {visibleLanguages.length === 0 && (
@@ -576,11 +601,12 @@ function NotificationPanel({ open, onClose }) {
           onRetry={data.refetch}
         >
           {rows.length === 0 && (
-            <p className="empty-state">Новых уведомлений пока нет.</p>
+            <EmptyState as="p">Новых уведомлений пока нет.</EmptyState>
           )}
           <div className="notification-list">
             {rows.map((row) => (
-              <button
+              <Button
+                variant="plain"
                 key={row.id}
                 className={row.read ? "" : "unread"}
                 onClick={async () => {
@@ -609,7 +635,7 @@ function NotificationPanel({ open, onClose }) {
                   new_follower: "подписался на вас",
                 }[row.type] || "отправил уведомление"}
                 <span className="muted">{date(row.created_at)}</span>
-              </button>
+              </Button>
             ))}
           </div>
           <LoadMore query={data} />

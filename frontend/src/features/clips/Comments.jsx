@@ -1,3 +1,6 @@
+import { ConfirmationActions } from "../../shared/ui/Confirmation";
+import { Feedback, EmptyState } from "../../shared/ui/Feedback";
+import { TextArea, Field } from "../../shared/ui/FormControls";
 import Select from "../../shared/ui/Select";
 import Reveal from "../../shared/ui/Reveal";
 import { useId, useLayoutEffect, useRef, useState } from "react";
@@ -88,6 +91,7 @@ export default function Comments({ clipId, anchor = false }) {
           <MessageCircle size={18} /> Обсуждение
         </h2>
         <Select
+          appearance="quiet"
           aria-label="Порядок комментариев"
           value={sort}
           onChange={(event) => setSort(event.target.value)}
@@ -123,10 +127,11 @@ export default function Comments({ clipId, anchor = false }) {
                 </div>
               )}
             </Reveal>
-            <label className="sr-only" htmlFor={inputId}>
+            <Field className="sr-only" htmlFor={inputId}>
               Ваш комментарий
-            </label>
-            <textarea
+            </Field>
+            <TextArea
+              appearance="embedded"
               id={inputId}
               ref={input}
               rows={1}
@@ -154,7 +159,8 @@ export default function Comments({ clipId, anchor = false }) {
                 </span>
                 <Button
                   type="button"
-                  className="composer-cancel"
+                  variant="quiet"
+                  size="compact"
                   onClick={() => {
                     setText("");
                     setReply(null);
@@ -166,6 +172,7 @@ export default function Comments({ clipId, anchor = false }) {
                 </Button>
                 <Button
                   variant="primary"
+                  size="compact"
                   busy={submit.isPending}
                   disabled={!text.trim()}
                 >
@@ -180,13 +187,15 @@ export default function Comments({ clipId, anchor = false }) {
         <div className="comment-signin">
           <MessageCircle size={19} />
           <p>Поделитесь своим мнением</p>
-          <Button onClick={openLogin}>Войти через Twitch</Button>
+          <Button size="compact" onClick={openLogin}>
+            Войти через Twitch
+          </Button>
         </div>
       )}
       {sent && (
-        <span className="feedback composer-feedback" role="status">
+        <Feedback as="span" className="composer-feedback" role="status">
           Комментарий отправлен
-        </span>
+        </Feedback>
       )}
       <div className="comment-stream">
         <Status
@@ -195,13 +204,13 @@ export default function Comments({ clipId, anchor = false }) {
           onRetry={query.refetch}
         >
           {rows.length === 0 && (
-            <div className="comments-empty">
+            <EmptyState className="comments-empty">
               <span className="comments-empty-icon">
                 <MessageCircle size={23} strokeWidth={1.5} />
               </span>
               <strong>Пока без комментариев</strong>
               <p>Начните обсуждение этого момента.</p>
-            </div>
+            </EmptyState>
           )}
           <div className="comment-list">
             {rows.map((row) => (
@@ -261,6 +270,7 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
     >
       {depth < 2 && (
         <Avatar
+          size={depth ? "avatar-small" : undefined}
           user={{
             username: comment.author_name,
             avatar_url: comment.author_avatar,
@@ -300,7 +310,7 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
               change.mutate({ method: "PUT", body: { body: text.trim() } });
             }}
           >
-            <textarea
+            <TextArea
               aria-label="Изменить комментарий"
               value={text}
               onChange={(event) => setText(event.target.value)}
@@ -309,8 +319,14 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
               autoFocus
             />
             <div className="button-row">
-              <Button busy={change.isPending}>Сохранить</Button>
-              <Button type="button" onClick={() => setEditing(false)}>
+              <Button size="compact" busy={change.isPending}>
+                Сохранить
+              </Button>
+              <Button
+                size="compact"
+                type="button"
+                onClick={() => setEditing(false)}
+              >
                 Отмена
               </Button>
             </div>
@@ -318,7 +334,8 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
         </Reveal>
         {!editing && <p className="comment-body">{comment.body}</p>}
         <div className="comment-actions">
-          <button
+          <Button
+            variant="plain"
             aria-label="Полезный комментарий"
             aria-pressed={comment.user_vote === 1}
             disabled={change.isPending}
@@ -326,8 +343,9 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
           >
             <ThumbsUp size={15} />
             {comment.upvotes > 0 && comment.upvotes}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="plain"
             aria-label="Неполезный комментарий"
             aria-pressed={comment.user_vote === -1}
             disabled={change.isPending}
@@ -335,34 +353,47 @@ function Comment({ comment, onReply, refresh, depth = 0, clipId }) {
           >
             <ThumbsDown size={15} />
             {comment.downvotes > 0 && comment.downvotes}
-          </button>
+          </Button>
           {depth < 7 && (
-            <button onClick={() => onReply(comment)}>Ответить</button>
+            <Button variant="plain" onClick={() => onReply(comment)}>
+              Ответить
+            </Button>
           )}
           {canEdit && (
-            <button
+            <Button
+              variant="plain"
               onClick={() => {
                 setText(comment.body);
                 setEditing(true);
               }}
             >
               Изменить
-            </button>
+            </Button>
           )}
           {canDelete && (
-            <button onClick={() => setConfirmDelete(true)}>Удалить</button>
+            <Button variant="plain" onClick={() => setConfirmDelete(true)}>
+              Удалить
+            </Button>
+          )}
+          {comment.user_id && [1, 2].includes(session.user?.role) && (
+            <Link
+              aria-label={`Управлять доступом ${comment.author_name}`}
+              to={`${session.user.role === 2 ? "/admin" : "/staff"}?tab=users&user=${comment.user_id}`}
+            >
+              Доступ автора
+            </Link>
           )}
         </div>
         <Reveal open={confirmDelete}>
           <div className="confirmation" role="alert">
             Удалить комментарий и ответы?
-            <Button
-              busy={change.isPending}
-              onClick={() => change.mutate({ method: "DELETE" })}
-            >
-              Удалить
-            </Button>
-            <Button onClick={() => setConfirmDelete(false)}>Отмена</Button>
+            <ConfirmationActions
+              className="button-row"
+              pending={change.isPending}
+              onConfirm={() => change.mutate({ method: "DELETE" })}
+              onCancel={() => setConfirmDelete(false)}
+              confirmLabel="Удалить"
+            />
           </div>
         </Reveal>
         {change.error && <Status error={change.error} />}

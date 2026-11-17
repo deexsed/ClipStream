@@ -70,3 +70,53 @@ it("keeps a failed reply draft and submits its actual parent through the keyboar
   expect(writes).toHaveLength(2);
   expect(screen.queryByRole("button", { name: "Отправить" })).toBeNull();
 });
+
+it.each([
+  [2, "/admin"],
+  [1, "/staff"],
+  [0, null],
+])("routes author access only for staff role %s", async (role, path) => {
+  localStorage.setItem("token", "fixture");
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) =>
+    json(
+      url.endsWith("/auth/me")
+        ? { user: { id: 1, username: "viewer", role } }
+        : {
+            comments: [
+              {
+                id: 5,
+                user_id: 2,
+                author_name: "creator",
+                body: "Author context",
+                reply_count: 0,
+              },
+            ],
+            has_more: false,
+          },
+    ),
+  );
+  render(
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <SessionProvider>
+          <Routes>
+            <Route element={<Outlet context={{ openLogin: vi.fn() }} />}>
+              <Route path="/" element={<Comments clipId={7} />} />
+            </Route>
+          </Routes>
+        </SessionProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+  await screen.findByText("Author context");
+  if (path)
+    expect(
+      (
+        await screen.findByRole("link", { name: "Управлять доступом creator" })
+      ).getAttribute("href"),
+    ).toBe(`${path}?tab=users&user=2`);
+  else
+    expect(
+      screen.queryByRole("link", { name: "Управлять доступом creator" }),
+    ).toBeNull();
+});

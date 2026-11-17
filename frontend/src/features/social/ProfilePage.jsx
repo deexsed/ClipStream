@@ -1,5 +1,13 @@
+import ConfirmDialog from "../../shared/ui/Confirmation";
+import TwitchImage from "../../shared/ui/TwitchImage";
+import ExternalLink from "../../shared/ui/ExternalLink";
+import SectionNav from "../../shared/ui/SectionNav";
+import { Metric, MetricGrid } from "../../shared/ui/Metrics";
+import { Surface, SectionHeading } from "../../shared/ui/Layout";
+import { Feedback, EmptyState } from "../../shared/ui/Feedback";
+import { Input, TextArea, Field } from "../../shared/ui/FormControls";
 import Select from "../../shared/ui/Select";
-import { twitchImageUrl } from "../../shared/twitchImage";
+
 import { useEffect, useState } from "react";
 import {
   Link,
@@ -10,15 +18,8 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
-import {
-  ArrowUpRight,
-  Award,
-  Check,
-  LogOut,
-  UserPlus,
-  Users,
-} from "lucide-react";
-import { request, queryString } from "../../shared/api/http";
+import { ArrowUpRight, Check, LogOut, Shield, UserPlus } from "lucide-react";
+import { request } from "../../shared/api/http";
 import {
   useApi,
   usePages,
@@ -27,12 +28,12 @@ import {
 } from "../../shared/api/queries";
 import { usePreferences } from "../../shared/preferences";
 import {
+  Identity,
   Avatar,
   Button,
-  Dialog,
   LoadMore,
-  PageHeading,
   Status,
+  ButtonLink,
 } from "../../shared/ui/Primitives";
 import { date, number } from "../../shared/format";
 import { useSession } from "../auth/Session";
@@ -127,6 +128,13 @@ export default function ProfilePage({ source = "user" }) {
             </header>
             <div className="profile-actions">
               <FollowButton profile={profile} />
+              {local?.id && [1, 2].includes(session.user?.role) && (
+                <ButtonLink
+                  to={`${session.user.role === 2 ? "/admin" : "/staff"}?tab=users&user=${local.id}`}
+                >
+                  <Shield size={15} /> Управлять доступом
+                </ButtonLink>
+              )}
               {local && !self && (
                 <FriendActions
                   user={{
@@ -141,14 +149,13 @@ export default function ProfilePage({ source = "user" }) {
                 />
               )}
               {twitch?.login && (
-                <a
-                  className="button"
+                <ButtonLink
                   href={`https://www.twitch.tv/${encodeURIComponent(twitch.login)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
                   Открыть Twitch <ArrowUpRight size={15} />
-                </a>
+                </ButtonLink>
               )}
               {self && (
                 <Button busy={session.loggingOut} onClick={session.logout}>
@@ -160,35 +167,30 @@ export default function ProfilePage({ source = "user" }) {
               <Status error={session.logoutError} onRetry={session.logout} />
             )}
             {!visible ? (
-              <div className="surface">
+              <Surface>
                 <h2>Закрытый профиль</h2>
                 <p className="muted">
                   Владелец ограничил доступ к содержимому профиля.
                 </p>
-              </div>
+              </Surface>
             ) : (
               <>
-                <nav className="profile-tabs" aria-label="Разделы профиля">
-                  {tabs.map(([key, label]) => (
-                    <button
-                      key={key}
-                      aria-current={tab === key ? "page" : undefined}
-                      onClick={() =>
-                        setParams((previous) => {
-                          const next = new URLSearchParams(previous);
-                          next.set("tab", key);
-                          return next;
-                        })
-                      }
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </nav>
+                <SectionNav
+                  label="Разделы профиля"
+                  items={tabs}
+                  value={tab}
+                  onChange={(key) =>
+                    setParams((previous) => {
+                      const next = new URLSearchParams(previous);
+                      next.set("tab", key);
+                      return next;
+                    })
+                  }
+                />
                 <div className="tab-content" key={tab}>
                   {tab === "overview" && (
                     <>
-                      <div className="profile-stats">
+                      <MetricGrid compact>
                         {[
                           ["followers", "Подписчиков"],
                           ["following", "Отслеживает"],
@@ -197,14 +199,16 @@ export default function ProfilePage({ source = "user" }) {
                         ]
                           .filter(([key]) => profile.stats?.[key] != null)
                           .map(([key, label]) => (
-                            <div key={key}>
-                              <strong>{number(profile.stats[key])}</strong>
-                              <span>{label}</span>
-                            </div>
+                            <Metric
+                              key={key}
+                              label={<>{label}</>}
+                              value={<>{number(profile.stats[key])}</>}
+                              compact
+                            />
                           ))}
-                      </div>
+                      </MetricGrid>
                       {twitch?.is_live && (
-                        <section className="surface channel-status">
+                        <Surface as="section" className="channel-status">
                           <span className="live-badge">Прямой эфир</span>
                           <h2>
                             {twitch.stream?.title || twitch.channel?.title}
@@ -215,25 +219,23 @@ export default function ProfilePage({ source = "user" }) {
                             {twitch.stream?.viewer_count != null &&
                               ` · ${number(twitch.stream.viewer_count)} зрителей`}
                           </p>
-                          <a
+                          <ExternalLink
                             className="text-link"
                             href={`https://www.twitch.tv/${encodeURIComponent(twitch.login)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
                           >
                             Смотреть эфир <ArrowUpRight size={15} />
-                          </a>
-                        </section>
+                          </ExternalLink>
+                        </Surface>
                       )}
                       {profile.about?.website && (
-                        <a
+                        <ExternalLink
                           className="text-link"
                           href={profile.about.website}
-                          target="_blank"
-                          rel="noopener noreferrer ugc"
+
+                          rel="ugc"
                         >
                           Сайт автора <ArrowUpRight size={14} />
-                        </a>
+                        </ExternalLink>
                       )}
                       <UnifiedClips profile={profile} />
                     </>
@@ -314,19 +316,21 @@ export function ProfileList({ path = "/me/following", title = "Отслежив�
         onRetry={query.refetch}
       >
         {pageItems(query, "profiles", "key").length === 0 && (
-          <p className="empty-state">Список пока пуст.</p>
+          <EmptyState as="p">Список пока пуст.</EmptyState>
         )}
         <div className="people-list">
           {pageItems(query, "profiles", "key").map((profile) => (
             <div key={profile.key}>
-              <Link className="creator" to={profile.canonical_path}>
-                <Avatar user={{ ...profile, username: profile.display_name }} />
+              <Identity
+                user={{ ...profile, username: profile.display_name }}
+                to={profile.canonical_path}
+              >
                 <strong>
                   {profile.display_name ||
                     profile.local_user?.username ||
                     profile.twitch?.login}
                 </strong>
-              </Link>
+              </Identity>
               <FollowButton profile={profile} />
             </div>
           ))}
@@ -346,9 +350,9 @@ function UnifiedClips({ profile }) {
   const rows = pageItems(query, "clips");
   return (
     <section>
-      <div className="section-label">
+      <SectionHeading>
         <h2>Клипы</h2>
-        <label className="select-label">
+        <Field inline className="select-label">
           <span className="sr-only">Какие клипы показывать</span>
           <Select
             aria-label="Какие клипы показывать"
@@ -359,8 +363,8 @@ function UnifiedClips({ profile }) {
             {profile.twitch && <option value="channel">С этого канала</option>}
             <option value="created">Созданные автором</option>
           </Select>
-        </label>
-      </div>
+        </Field>
+      </SectionHeading>
       <Status
         loading={query.isPending}
         error={!query.data && query.error}
@@ -404,52 +408,53 @@ function ProfileSettingsForm({ initial }) {
     onSuccess: refreshSocial,
   });
   return (
-    <form
-      className="surface form-stack"
+    <Surface
+      as="form"
+      className="form-stack"
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate(Object.fromEntries(new FormData(event.currentTarget)));
       }}
     >
-      <label>
+      <Field>
         Отображаемое имя
-        <input
+        <Input
           name="display_name"
           defaultValue={initial.display_name}
           maxLength={64}
         />
-      </label>
+      </Field>
       <small>
         Ник и привязка Twitch останутся подтверждёнными аккаунтом Twitch.
       </small>
-      <label>
+      <Field>
         О себе
-        <textarea name="bio" defaultValue={initial.bio} maxLength={1000} />
-      </label>
-      <label>
+        <TextArea name="bio" defaultValue={initial.bio} maxLength={1000} />
+      </Field>
+      <Field>
         Сайт
-        <input
+        <Input
           name="website"
           type="url"
           defaultValue={initial.website}
           maxLength={512}
         />
-      </label>
+      </Field>
       {[
         ["profile_visibility", "Кому виден профиль"],
         ["followers_visibility", "Кому видны подписчики"],
         ["following_visibility", "Кому виден список отслеживания"],
       ].map(([key, label]) => (
-        <label key={key}>
+        <Field key={key}>
           {label}
           <Select aria-label={label} name={key} defaultValue={initial[key]}>
             <option value="public">Всем</option>
             <option value="friends">Друзьям</option>
             <option value="private">Только мне</option>
           </Select>
-        </label>
+        </Field>
       ))}
-      <label>
+      <Field>
         Кто может оставлять записи
         <Select
           aria-label="Кто может оставлять записи"
@@ -460,17 +465,13 @@ function ProfileSettingsForm({ initial }) {
           <option value="friends">Друзья</option>
           <option value="none">Только я</option>
         </Select>
-      </label>
+      </Field>
       {save.error && <Status error={save.error} />}
-      {save.isSuccess && (
-        <p className="feedback" role="status">
-          Профиль сохранён
-        </p>
-      )}
+      {save.isSuccess && <Feedback role="status">Профиль сохранён</Feedback>}
       <Button variant="primary" busy={save.isPending}>
         Сохранить профиль
       </Button>
-    </form>
+    </Surface>
   );
 }
 function refreshSocial() {
@@ -569,23 +570,24 @@ function Wall({ username, self, canWrite = self }) {
     <section className="wall">
       <h2>Записи</h2>
       {canWrite && (
-        <form
-          className="surface form-stack"
+        <Surface
+          as="form"
+          className="form-stack"
           onSubmit={(event) => {
             event.preventDefault();
             if (!mutation.isPending) mutation.mutate();
           }}
         >
-          <label>
+          <Field>
             <span className="sr-only">Новая запись</span>
-            <textarea
+            <TextArea
               value={body}
               onChange={(event) => setBody(event.target.value)}
               required
               maxLength={4000}
               placeholder="Поделитесь моментом. Упоминания: @ник или @clip/ID"
             />
-          </label>
+          </Field>
           <div className="button-row end">
             <Button
               variant="primary"
@@ -596,14 +598,14 @@ function Wall({ username, self, canWrite = self }) {
             </Button>
           </div>
           {mutation.error && <Status error={mutation.error} />}
-        </form>
+        </Surface>
       )}
       <Status
         loading={query.isPending}
         error={!query.data && query.error}
         onRetry={query.refetch}
       >
-        {rows.length === 0 && <p className="empty-state">Записей пока нет.</p>}
+        {rows.length === 0 && <EmptyState as="p">Записей пока нет.</EmptyState>}
         {rows.map((post) => (
           <WallPost
             key={post.id}
@@ -640,18 +642,17 @@ function WallPost({ post, owner, refresh }) {
     },
   });
   return (
-    <article className="wall-post surface">
-      <div className="section-label">
-        <Link
-          className="creator"
+    <Surface as="article" className="wall-post">
+      <SectionHeading>
+        <Identity
+          user={post.author}
           to={`/u/${encodeURIComponent(post.author?.username || "")}`}
         >
-          <Avatar user={post.author} />
           <div>
             <strong>{post.author?.username || "Пользователь"}</strong>
             <small>{date(post.created_at)}</small>
           </div>
-        </Link>
+        </Identity>
         <div className="button-row">
           {author && (
             <Button
@@ -667,7 +668,7 @@ function WallPost({ post, owner, refresh }) {
             <Button onClick={() => setDeleting(true)}>Удалить</Button>
           )}
         </div>
-      </div>
+      </SectionHeading>
       {editing ? (
         <form
           className="form-stack"
@@ -676,15 +677,15 @@ function WallPost({ post, owner, refresh }) {
             mutation.mutate("PUT");
           }}
         >
-          <label>
+          <Field>
             Текст записи
-            <textarea
+            <TextArea
               value={body}
               onChange={(event) => setBody(event.target.value)}
               required
               maxLength={4000}
             />
-          </label>
+          </Field>
           <small>
             Редактирование упоминаний не отправляет повторных уведомлений.
           </small>
@@ -698,25 +699,20 @@ function WallPost({ post, owner, refresh }) {
         </p>
       )}
       {mutation.error && !deleting && <Status error={mutation.error} />}
-      <Dialog
+      <ConfirmDialog
         open={deleting}
         onClose={() => setDeleting(false)}
         title="Удалить запись"
+        pending={mutation.isPending}
+        onConfirm={() => mutation.mutate("DELETE")}
+        confirmLabel={<>Удалить запись</>}
+        onCancel={() => setDeleting(false)}
+        cancelLabel={<>Отмена</>}
+        error={mutation.error}
       >
         <p>Запись будет удалена из профиля вместе с упоминаниями.</p>
-        {mutation.error && <Status error={mutation.error} />}
-        <div className="dialog-actions">
-          <Button onClick={() => setDeleting(false)}>Отмена</Button>
-          <Button
-            variant="primary"
-            busy={mutation.isPending}
-            onClick={() => mutation.mutate("DELETE")}
-          >
-            Удалить запись
-          </Button>
-        </div>
-      </Dialog>
-    </article>
+      </ConfirmDialog>
+    </Surface>
   );
 }
 function MentionText({ text }) {
@@ -811,13 +807,12 @@ function PeopleList({ path, title, friendship }) {
         <div className="people-list">
           {rows.map((user) => (
             <div key={user.id}>
-              <Link
-                className="creator"
+              <Identity
+                user={user}
                 to={`/u/${encodeURIComponent(user.username)}`}
               >
-                <Avatar user={user} />
                 <strong>{user.username}</strong>
-              </Link>
+              </Identity>
               {friendship && <FriendActions user={{ ...user, friendship }} />}
             </div>
           ))}
@@ -848,7 +843,7 @@ function Activity({ userId }) {
         onRetry={query.refetch}
       >
         {rows.length === 0 && (
-          <p className="empty-state">История пока пуста.</p>
+          <EmptyState as="p">История пока пуста.</EmptyState>
         )}
         <div className="activity-list">
           {rows.map((item) => (
@@ -870,9 +865,9 @@ function Activity({ userId }) {
 
 function PlayPreview({ src }) {
   return src ? (
-    <img
+    <TwitchImage
       className="small-preview"
-      src={twitchImageUrl(src)}
+      src={src}
       alt=""
       loading="lazy"
       decoding="async"
@@ -922,31 +917,28 @@ function SettingsForm({ data }) {
     },
   });
   return (
-    <form
-      className="surface form-stack"
+    <Surface
+      as="form"
+      className="form-stack"
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
       }}
     >
-      <label>
+      <Field>
         Скрывать клипы со словами
-        <textarea
+        <TextArea
           value={keywords}
           onChange={(event) => setKeywords(event.target.value)}
           maxLength={4000}
           placeholder="Каждое слово или фраза — с новой строки"
         />
-      </label>
+      </Field>
       <Button variant="primary" busy={save.isPending}>
         Сохранить настройки
       </Button>
-      {save.isSuccess && (
-        <p role="status" className="feedback">
-          Настройки сохранены
-        </p>
-      )}
+      {save.isSuccess && <Feedback role="status">Настройки сохранены</Feedback>}
       {save.error && <Status error={save.error} />}
-    </form>
+    </Surface>
   );
 }

@@ -56,3 +56,35 @@ it("keeps pointer typing quiet, exposes keyboard focus, and never moves search f
   delete document.documentElement.dataset.input;
   vi.unstubAllGlobals();
 });
+
+it.each([
+  ["/?q=initial", "initial"],
+  ["/admin?tab=users&q=alice", ""],
+])("scopes the header query to global search at %s", (entry, expected) => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes>
+          <Route element={<Shell />}>
+            <Route path="*" element={<p>Page</p>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const input = screen.getByRole("searchbox", {
+    name: "Поиск клипов, каналов и людей",
+  });
+  expect(input.value).toBe(expected);
+  if (expected) {
+    fireEvent.click(screen.getByRole("button", { name: "Очистить поиск" }));
+    expect(input.value).toBe("");
+  } else
+    expect(screen.queryByRole("button", { name: "Очистить поиск" })).toBeNull();
+  vi.unstubAllGlobals();
+});

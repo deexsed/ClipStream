@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { request } from "../../shared/api/http";
-import { Status } from "../../shared/ui/Primitives";
+import { Status, ButtonLink } from "../../shared/ui/Primitives";
 import { useSession } from "./Session";
 
 const exchanges = new Map();
@@ -95,11 +95,7 @@ export default function CallbackPage() {
   return (
     <div className="page narrow">
       <Status loading={!error} error={error} />
-      {error && (
-        <Link to="/" className="button">
-          На главную
-        </Link>
-      )}
+      {error && <ButtonLink to="/">На главную</ButtonLink>}
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import ExternalLink from "../../shared/ui/ExternalLink";
+import { Surface } from "../../shared/ui/Layout";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { ArrowUpRight, FileText } from "lucide-react";
 import { PageHeading, Status } from "../../shared/ui/Primitives";
@@ -32,7 +34,7 @@ export default function LegalPage() {
         />
       ) : (
         <>
-          <div className="surface operator">
+          <Surface className="operator">
             <h2>
               {legal.operator_name || "Оператор: [указать ФИО или организацию]"}
             </h2>
@@ -45,28 +47,23 @@ export default function LegalPage() {
               <p>Контакт для обращений: [указать email]</p>
             )}
             <p className="muted">Версия документов: {legal.version}</p>
-          </div>
+          </Surface>
           {slug ? (
             <>
               {document && externalUrl ? (
-                <a
-                  className="document-row"
-                  href={externalUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+                <ExternalLink className="document-row" href={externalUrl}>
                   <FileText />
                   Открыть опубликованную редакцию <ArrowUpRight size={18} />
-                </a>
+                </ExternalLink>
               ) : document ? (
-                <article className="surface prose">
+                <Surface as="article" className="prose">
                   {document.sections.map(([title, text]) => (
                     <section key={title}>
                       <h2>{title}</h2>
                       <p>{text}</p>
                     </section>
                   ))}
-                </article>
+                </Surface>
               ) : (
                 <Status empty="Документ не найден" />
               )}

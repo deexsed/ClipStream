@@ -13,55 +13,8 @@
   --interaction-return: var(--motion-control);
   --interaction-press: 100ms;
   --interaction-ease: var(--ease);
-  --motion-dialog-enter: var(--motion-panel-enter);
-  --motion-dialog-exit: var(--motion-panel-exit);
 }
 
-/* Native dialog still owns focus, Escape and inertness. WAAPI keeps both
-   directions interruptible, while the backdrop follows the same lifecycle. */
-.dialog,
-.dialog[open],
-.dialog.sidebar-drawer[open],
-.dialog.rush-comments-sheet[open] {
-  animation: none;
-}
-.dialog {
-  --dialog-hidden-transform: translateY(8px) scale(0.96);
-}
-.dialog.sidebar-drawer {
-  --dialog-hidden-transform: translateX(-100%);
-  --motion-dialog-enter: var(--motion-drawer-enter);
-  --motion-dialog-exit: var(--motion-drawer-exit);
-}
-.dialog.rush-comments-sheet {
-  --dialog-hidden-transform: translateY(100%);
-  --motion-dialog-enter: var(--motion-drawer-enter);
-  --motion-dialog-exit: var(--motion-drawer-exit);
-}
-.dialog::backdrop {
-  opacity: 1;
-  transition: opacity var(--motion-dialog-enter) var(--ease);
-}
-@starting-style {
-  .dialog[open]::backdrop {
-    opacity: 0;
-  }
-}
-.dialog[data-state="closing"]::backdrop {
-  opacity: 0;
-  transition-duration: var(--motion-dialog-exit);
-}
-.header-search {
-  transition:
-    border-color var(--motion-color),
-    box-shadow var(--motion-color),
-    background-color var(--motion-color);
-}
-.header-search:focus-within {
-  border-color: var(--theme-control-line, #9280b4);
-  background-color: var(--theme-selected-bg, #201d28);
-  box-shadow: 0 0 0 3px #bba6ef12;
-}
 .language-options label {
   border-radius: 8px;
   padding-inline: 6px;
@@ -73,36 +26,12 @@
   background-color: #c8beff12;
   color: var(--theme-text, #e5d9ff);
 }
-.ui-select-chevron {
-  transition: transform var(--interaction-return) var(--ease);
-}
-.ui-select[data-state="open"] .ui-select-chevron {
-  transform: rotate(180deg);
-}
 .motion-reveal {
   min-height: 0;
 }
 .motion-reveal[data-motion-state="entering"],
 .motion-reveal[data-motion-state="exiting"] {
   overflow: hidden;
-}
-.button {
-  position: relative;
-}
-.button-content {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: inherit;
-}
-.button-busy-indicator {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-}
-.button[aria-busy="true"] .button-content {
-  opacity: 0;
 }
 
 /* The video must resize with this docked panel. This bounded, short grid
@@ -157,35 +86,7 @@
   fill: currentColor;
   fill-opacity: 0.18;
 }
-.feedback {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border: 1px solid #7caa8033;
-  border-radius: 10px;
-  background: #7caa8010;
-}
-.feedback::before {
-  content: "";
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-@starting-style {
-  .feedback {
-    opacity: 0;
-  }
-}
-.feedback {
-  transition: opacity 180ms var(--ease);
-}
 
-:root[data-input="keyboard"] .dialog::backdrop {
-  transition: none;
-}
 :root[data-input="keyboard"]
   :is(
     .app-shell,
@@ -196,10 +97,6 @@
     .sidebar .side-navigation > a > span
   ) {
   transition: none;
-}
-:root[data-input="keyboard"] :is(.ui-select-chevron, .ui-select-content) {
-  transition: none;
-  animation: none;
 }
 :root
   :is(
@@ -277,9 +174,6 @@
 :root [aria-busy="true"] {
   cursor: progress;
 }
-.button[aria-busy="true"] {
-  opacity: 0.78;
-}
 :root button[aria-pressed="true"] {
   background-color: var(--theme-selected-bg, #30283d);
   color: var(--theme-selected-text, #e5d9ff);
@@ -300,18 +194,6 @@
       [role="checkbox"]
     ):hover:not(:disabled, [aria-disabled="true"], [aria-busy="true"]) {
     background-image: linear-gradient(#ffffff09, #ffffff09);
-  }
-  .button:hover:not(:disabled, [aria-disabled="true"]) {
-    border-color: var(--theme-line, #61566f);
-    box-shadow: 0 3px 12px #0002;
-  }
-  .button-primary:hover:not(:disabled) {
-    background-color: #e3d7ff;
-    border-color: var(--theme-control-line, #e3d7ff);
-    box-shadow: 0 3px 18px #bea0ff25;
-  }
-  .icon-button:hover:not(:disabled) {
-    background-color: var(--theme-selected-bg, #302a3a);
   }
   :root
     a[href]:hover:not([aria-disabled="true"]):where(
@@ -362,32 +244,12 @@
 }
 
 /* Color/outline feedback remains; spatial motion is optional. */
-.ui-select-content[data-state="closed"] {
-  /* Release Radix focus/pointer locks even when input modality changes mid-exit. */
-  display: none;
-  animation: none;
-  pointer-events: none;
-}
 
 /* Text inputs match :focus-visible even after a pointer click. Honor the
    actual input modality so typing after a click does not summon a ring. */
 :root[data-input="pointer"] :focus-visible {
   outline: none;
 }
-:root .header-search input:focus-visible {
-  outline: none;
-  box-shadow: none;
-}
-:root[data-input="keyboard"] .header-search:focus-within {
-  outline: 2px solid var(--theme-accent, #bba6ef);
-  outline-offset: 3px;
-}
-:root[data-input="pointer"] .header-search:focus-within {
-  outline: none;
-  border-color: var(--theme-line, #615773);
-  box-shadow: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .tab-content,
   .rush-body,
@@ -396,15 +258,8 @@
     animation: none;
     transition: none;
   }
-  .dialog::backdrop,
-  .header-search,
-  .language-options label,
-  .ui-select-chevron,
-  .feedback {
+  .language-options label {
     transition: none;
-  }
-  .ui-select-content[data-state="closed"] {
-    animation: none;
   }
   :root
     :is(

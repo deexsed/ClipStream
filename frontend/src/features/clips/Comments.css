@@ -46,39 +46,18 @@
   box-shadow: 0 0 0 3px #b8a0e00c;
 }
 .comment-composer > .avatar {
-  width: 30px;
-  height: 30px;
   margin-top: 5px;
-  flex-shrink: 0;
-  font-size: 0.85rem;
 }
 .composer-main {
   flex: 1;
   min-width: 0;
 }
-.comment-composer textarea {
-  display: block;
+.composer-main > textarea {
   resize: none;
   min-height: 48px;
   max-height: 160px;
-  width: 100%;
   padding: 10px 1px;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  outline: none;
-  border-radius: 0;
-  font-size: 0.93rem;
   line-height: 1.5;
-  color: var(--theme-text, #f0ebf7);
-}
-.comment-composer textarea::placeholder {
-  color: var(--theme-muted, #a8a0b5);
-}
-.comment-composer textarea:focus {
-  outline: none;
-  box-shadow: none;
-  border: 0;
 }
 .composer-controls {
   display: flex;
@@ -94,18 +73,6 @@
   color: var(--theme-muted, #aba1b8);
   font-variant-numeric: tabular-nums;
 }
-.composer-controls .button {
-  min-height: 34px;
-  padding: 7px 11px;
-  border-radius: 999px;
-  font-size: 0.78rem;
-}
-.composer-controls .composer-cancel {
-  border-color: transparent;
-  background: transparent;
-  color: var(--theme-muted, #bdb4ca);
-  box-shadow: none;
-}
 .composer-reply {
   display: flex;
   align-items: center;
@@ -120,10 +87,6 @@
 }
 .composer-reply .icon-button {
   margin-left: auto;
-  width: 25px;
-  height: 25px;
-  min-height: 25px;
-  flex-shrink: 0;
 }
 .comment-signin {
   display: flex;
@@ -139,10 +102,6 @@
   margin: 0;
   font-size: 0.85rem;
   flex: 1;
-}
-.comment-signin .button {
-  font-size: 0.8rem;
-  border-radius: 999px;
 }
 .comment-stream {
   min-width: 0;
@@ -194,12 +153,6 @@
   gap: 10px;
   min-width: 0;
 }
-.comment > .avatar {
-  width: 30px;
-  height: 30px;
-  flex-shrink: 0;
-  font-size: 0.8rem;
-}
 .comment-content {
   flex: 1;
   min-width: 0;
@@ -248,7 +201,7 @@
   flex-wrap: wrap;
   gap: 3px;
 }
-.comment-actions > button {
+.comment-actions > :is(button, a) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -263,7 +216,7 @@
     color 120ms,
     transform 120ms;
 }
-.comment-actions > button[aria-pressed="true"] {
+.comment-actions > :is(button, a)[aria-pressed="true"] {
   color: var(--theme-selected-text, #d6baf7);
   background: var(--theme-selected-bg, #34283f);
 }
@@ -272,11 +225,6 @@
   border-left: 1px solid var(--theme-line, #3a3143);
   margin-top: 18px;
 }
-.comment-reply > .avatar {
-  width: 24px;
-  height: 24px;
-  font-size: 0.68rem;
-}
 .comment-flat {
   display: block;
   padding-left: 0;
@@ -284,18 +232,6 @@
 }
 .comment-editor {
   margin: 8px 0;
-}
-.comment-editor textarea {
-  border-radius: 12px;
-  background: var(--theme-selected-bg, #25212d);
-  font-size: 0.95rem;
-  min-height: 80px;
-}
-.comment-editor .button {
-  border-radius: 999px;
-  min-height: 34px;
-  padding: 7px 12px;
-  font-size: 0.8rem;
 }
 .rush-comments .comments,
 .rush-comments-sheet .comments {
@@ -334,7 +270,7 @@
   justify-content: center;
 }
 @media (hover: hover) and (pointer: fine) {
-  .comment-actions > button:hover:not(:disabled) {
+  .comment-actions > :is(button, a):hover:not(:disabled) {
     background: var(--theme-raised, #302738);
     color: var(--theme-text, #e0cbee);
   }
@@ -346,14 +282,8 @@
   .comment-body {
     font-size: 0.95rem;
   }
-  .comment-composer textarea {
-    font-size: 1rem;
-  }
-  .composer-controls .button {
-    min-height: 40px;
-    font-size: 0.8rem;
-  }
-  .comment-actions > button {
+
+  .comment-actions > :is(button, a) {
     min-height: 36px;
   }
   .comment-composer {

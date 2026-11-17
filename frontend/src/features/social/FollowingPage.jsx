@@ -1,18 +1,23 @@
+import ExternalLink from "../../shared/ui/ExternalLink";
+import SectionNav from "../../shared/ui/SectionNav";
+import { Surface } from "../../shared/ui/Layout";
+import { EmptyState } from "../../shared/ui/Feedback";
 import { useState } from "react";
-import { Link, useOutletContext, useSearchParams } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import { ArrowUpRight } from "lucide-react";
 import { useSession } from "../auth/Session";
 import { ProfileList } from "./ProfilePage";
 import { useApi, usePages, pageItems } from "../../shared/api/queries";
 import { usePreferences } from "../../shared/preferences";
 import {
-  Avatar,
+  Identity,
   Button,
   PageHeading,
   LoadMore,
   Status,
 } from "../../shared/ui/Primitives";
 import ClipCard from "../clips/ClipCard";
+import SearchField from "../../shared/ui/SearchField";
 export default function FollowingPage() {
   const session = useSession();
   const { openLogin } = useOutletContext();
@@ -28,27 +33,22 @@ export default function FollowingPage() {
         description="Каналы, авторы и их новые моменты."
       />
       {!session.user ? (
-        <div className="surface">
+        <Surface>
           <p>Войдите через Twitch, чтобы собрать свою ленту.</p>
           <Button onClick={openLogin}>Войти через Twitch</Button>
-        </div>
+        </Surface>
       ) : (
         <>
-          <nav className="profile-tabs" aria-label="Источники подписок">
-            {[
+          <SectionNav
+            label="Источники подписок"
+            items={[
               ["feed", "Моя лента"],
               ["profiles", "Профили ClipStream"],
               ["twitch", "Подписки Twitch"],
-            ].map(([key, label]) => (
-              <button
-                key={key}
-                aria-current={tab === key ? "page" : undefined}
-                onClick={() => setParams({ tab: key })}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
+            ]}
+            value={tab}
+            onChange={(key) => setParams({ tab: key })}
+          />
           <div className="tab-content" key={tab}>
             {tab === "feed" ? (
               <FollowingFeed />
@@ -105,13 +105,12 @@ function TwitchFollowing() {
         Список из вашего Twitch. Изменение отслеживания в ClipStream не меняет
         подписки в Twitch.
       </p>
-      <input
+      <SearchField
         className="following-search"
-        type="search"
         aria-label="Найти подписку Twitch"
         placeholder="Найти канал"
         value={search}
-        onChange={(event) => setSearch(event.target.value)}
+        onValueChange={setSearch}
       />
       <Status
         loading={query.isPending}
@@ -121,32 +120,27 @@ function TwitchFollowing() {
         <div className="people-list">
           {rows.map((channel) => (
             <div key={channel.broadcaster_id}>
-              <Link
-                className="creator"
+              <Identity
+                user={{
+                  username: channel.broadcaster_name,
+                  avatar_url: channel.profile_image_url || channel.avatar_url,
+                }}
                 to={`/p/twitch/${channel.broadcaster_id}`}
               >
-                <Avatar
-                  user={{
-                    username: channel.broadcaster_name,
-                    avatar_url: channel.profile_image_url || channel.avatar_url,
-                  }}
-                />
                 <strong>{channel.broadcaster_name}</strong>
                 {channel.is_live && <span className="live-badge">В эфире</span>}
-              </Link>
-              <a
+              </Identity>
+              <ExternalLink
                 className="text-link"
                 href={`https://www.twitch.tv/${encodeURIComponent(channel.broadcaster_login)}`}
-                target="_blank"
-                rel="noopener noreferrer"
               >
                 Twitch <ArrowUpRight size={14} />
-              </a>
+              </ExternalLink>
             </div>
           ))}
         </div>
         {rows.length === 0 && (
-          <p className="empty-state">Каналов не найдено.</p>
+          <EmptyState as="p">Каналов не найдено.</EmptyState>
         )}
       </Status>
     </section>

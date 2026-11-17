@@ -1,3 +1,4 @@
+import { Checkbox } from "../../shared/ui/FormControls";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
@@ -40,13 +41,11 @@ export default function LoginDialog({ open, onClose, config }) {
             mutation.mutate();
           }}
         >
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={consent}
-              onChange={(event) => setConsent(event.target.checked)}
-              required
-            />
+          <Checkbox
+            checked={consent}
+            onChange={(event) => setConsent(event.target.checked)}
+            required
+          >
             <span>
               Принимаю{" "}
               <Link to="/legal/terms" onClick={onClose}>
@@ -62,7 +61,7 @@ export default function LoginDialog({ open, onClose, config }) {
               </Link>
               .
             </span>
-          </label>
+          </Checkbox>
           {!config.data?.auth?.twitch_enabled && (
             <p className="muted">Вход временно недоступен. Попробуйте позже.</p>
           )}
