@@ -95,35 +95,49 @@ ClipRepository::recommendation_candidates(uint64_t user_id, const FeedMuteSet *m
     const auto uid = std::to_string(user_id);
     const std::string age = "GREATEST(0,TIMESTAMPDIFF(HOUR,COALESCE(c.twitch_"
                             "created_ts,c.created_at),UTC_TIMESTAMP()))";
+    // Keep TIMESTAMPDIFF's whole-hour boundaries, but expose indexed dates to
+    // the range optimizer. Missing Twitch dates retain the import-time fallback.
+    auto newer_than = [](unsigned hours) {
+        const auto cutoff = "UTC_TIMESTAMP()-INTERVAL " + std::to_string(hours) + " HOUR";
+        return " AND (c.twitch_created_ts>" + cutoff + " OR (c.twitch_created_ts IS NULL AND c.created_at>" +
+               cutoff + "))";
+    };
+    const std::string old_cutoff = "UTC_TIMESTAMP()-INTERVAL 720 HOUR";
+    const std::string old = " AND (c.twitch_created_ts<=" + old_cutoff +
+                            " OR (c.twitch_created_ts IS NULL AND c.created_at<=" + old_cutoff + "))";
     std::ostringstream pools;
     if (!only_ids.empty()) {
         pools << "SELECT c.id FROM clips c WHERE c.id IN (";
         append_in_numeric(pools, only_ids);
         pools << ")" << filters.str();
     } else {
-        auto pool = [&](const std::string &join, const std::string &where, const std::string &order, int n) {
+        auto pool = [&](const std::string &join, const std::string &where, const std::string &order, int n,
+                        const std::string &from = "clips c") {
             if (pools.tellp() > 0)
                 pools << " UNION ";
-            pools << "(SELECT c.id FROM clips c " << join << " WHERE 1=1 " << filters.str() << where
+            pools << "(SELECT c.id FROM " << from << ' ' << join << " WHERE 1=1 " << filters.str() << where
                   << " ORDER BY " << order << " LIMIT " << n << ")";
         };
         pool("", "", "c.view_count DESC,c.id DESC", 160);
-        pool("", " AND " + age + ">=720", "c.view_count DESC,c.id DESC", 120);
+        pool("", old, "c.view_count DESC,c.id DESC", 120);
         // Zero-view new clips are eligible. No minimum popularity threshold.
-        pool("", " AND " + age + "<=168", "c.twitch_created_ts DESC,c.id DESC", rush ? 240 : 120);
-        pool("", " AND c.discovery_bucket=MOD(FLOOR(UNIX_TIMESTAMP()/1800),32) AND " + age + "<=720",
+        pool("", newer_than(169), "c.twitch_created_ts DESC,c.id DESC", rush ? 240 : 120);
+        pool("", " AND c.discovery_bucket=MOD(FLOOR(UNIX_TIMESTAMP()/1800),32)" + newer_than(721),
              "c.twitch_created_ts DESC,c.id DESC", rush ? 160 : 80);
         if (rush) {
-            pool("", " AND " + age + "<=720 AND c.view_count<5000",
+            pool("", newer_than(721) + " AND c.view_count<5000",
                  "c.view_count ASC,c.twitch_created_ts DESC,c.id DESC", 160);
         }
-        pool("JOIN recommendation_clip_features f ON f.clip_id=c.id", "", "f.audience_score DESC,c.id DESC",
-             160);
+        // Drive ranked sources from their ordered indexes. Starting with clips
+        // makes MySQL scan/filter the catalog before sorting the joined scores.
+        pool("STRAIGHT_JOIN clips c ON c.id=f.clip_id", "", "f.audience_score DESC,f.clip_id DESC", 160,
+             "recommendation_clip_features f");
         pool("JOIN " + promo_boost_label_subquery("'all','recommended','feed'") + " ON promo.clip_id=c.id",
              "", "promo.promo_boost DESC,c.id DESC", 24);
         if (user_id) {
-            pool("JOIN recommendation_predictions p ON p.clip_id=c.id AND p.user_id=" + uid,
-                 " AND p.computed_at>UTC_TIMESTAMP()-INTERVAL 6 HOUR", "p.score DESC,c.id DESC", 120);
+            pool("STRAIGHT_JOIN clips c ON c.id=p.clip_id",
+                 " AND p.user_id=" + uid + " AND p.computed_at>UTC_TIMESTAMP()-INTERVAL 6 HOUR",
+                 "p.score DESC,p.clip_id DESC", 120, "recommendation_predictions p");
             pool("",
                  " AND c.game_id IN (SELECT game_id FROM (SELECT c2.game_id FROM "
                  "likes l "

@@ -9,12 +9,115 @@
 #include <chrono>
 #include <future>
 #include <iostream>
+#include <map>
+#include <set>
 #include <stdexcept>
 #include <thread>
 using namespace clipstream;
 static void check(bool value, const char *message) {
     if (!value)
         throw std::runtime_error(message);
+}
+static void candidate_range_contracts(database::DbConfig config, const std::vector<uint64_t> &excluded,
+                                      const std::string &suffix) {
+    // One connection fixes the clock without changing any other suite's session.
+    config.pool_size = 1;
+    database::ConnectionPool pool(config);
+    repositories::ClipRepository clips(pool);
+    auto exec = [&](const std::string &sql) {
+        database::ScopedConnection conn(pool);
+        database::query(conn.raw(), sql.c_str());
+    };
+    exec("SET timestamp=1800000000");
+    const auto prefix = "pool" + suffix + "-";
+    struct Cleanup {
+        database::ConnectionPool &pool;
+        std::string prefix;
+        ~Cleanup() {
+            try {
+                database::ScopedConnection conn(pool);
+                database::query(conn.raw(),
+                                ("DELETE FROM clips WHERE twitch_clip_id LIKE '" + prefix + "%'").c_str());
+            } catch (...) {
+                std::cerr << "Candidate fixture cleanup failed\n";
+            }
+        }
+    } cleanup{pool, prefix};
+    const std::string insert = "INSERT INTO clips(twitch_clip_id,title,broadcaster_id,broadcaster_name,"
+                               "view_count,twitch_created_at,created_at,discovery_bucket,thumbnail_url,embed_url) VALUES ";
+    const std::string other_bucket = "MOD(FLOOR(UNIX_TIMESTAMP()/1800)+16,32)";
+    std::string bulk = insert;
+    for (unsigned i = 0; i < 300; ++i) {
+        if (i)
+            bulk += ',';
+        bulk += "('" + prefix + "bulk" + std::to_string(i) +
+                "','Pool bounds','pool','pool',100,"
+                "'2020-01-01T00:00:00Z',UTC_TIMESTAMP()," +
+                other_bucket + ",'','')";
+    }
+    exec(bulk);
+    auto fixture = [&](const std::string &name, const std::string &published, const std::string &imported) {
+        exec(insert + "('" + prefix + name + "','Age boundary','pool','pool',0," + published + ',' +
+             imported + ',' + other_bucket + ",'','')");
+    };
+    auto twitch_date = [](const std::string &when) {
+        return "DATE_FORMAT(" + when + ",'%Y-%m-%dT%H:%i:%sZ')";
+    };
+    fixture("fresh", twitch_date("UTC_TIMESTAMP()-INTERVAL 168 HOUR-INTERVAL 30 MINUTE"), "UTC_TIMESTAMP()");
+    fixture("expired", twitch_date("UTC_TIMESTAMP()-INTERVAL 169 HOUR"), "UTC_TIMESTAMP()");
+    fixture("null-fresh", "NULL", "UTC_TIMESTAMP()-INTERVAL 168 HOUR-INTERVAL 30 MINUTE");
+    fixture("null-expired", "NULL", "UTC_TIMESTAMP()-INTERVAL 169 HOUR");
+    std::map<std::string, uint64_t> ids;
+    auto load_ids = [&] {
+        database::ScopedConnection conn(pool);
+        database::query(conn.raw(), ("SELECT twitch_clip_id,id FROM clips WHERE twitch_clip_id LIKE '" +
+                                     prefix + "%' ORDER BY id")
+                                        .c_str());
+        database::Result result(mysql_store_result(conn.raw()));
+        while (auto row = mysql_fetch_row(result))
+            ids[std::string(row[0]).substr(prefix.size())] = std::stoull(row[1]);
+    };
+    load_ids();
+    repositories::FeedMuteSet mutes;
+    mutes.exclude_clip_ids = excluded;
+    auto selected = [&] {
+        std::set<uint64_t> result;
+        for (const auto &candidate : clips.recommendation_candidates(0, &mutes, {}))
+            result.insert(candidate.clip.id);
+        return result;
+    };
+    auto fresh = selected();
+    check(fresh.size() == 162, "Bounded candidate pools changed size");
+    for (unsigned i = 0; i < 300; ++i)
+        check(fresh.contains(ids.at("bulk" + std::to_string(i))) == (i >= 140),
+              "Popularity ID tie-break or per-source limit changed");
+    check(fresh.contains(ids.at("fresh")) && fresh.contains(ids.at("null-fresh")),
+          "Whole-hour freshness or NULL-date fallback lost");
+    check(!fresh.contains(ids.at("expired")) && !fresh.contains(ids.at("null-expired")),
+          "169-hour boundary became inclusive");
+    exec("INSERT INTO recommendation_clip_features(clip_id,audience_score) SELECT id,1 FROM clips "
+         "WHERE twitch_clip_id LIKE '" + prefix + "bulk%' ORDER BY id LIMIT 200");
+    auto audience = selected();
+    check(audience.size() == 262, "Audience source lost its independent bounded allocation");
+    for (unsigned i = 0; i < 300; ++i)
+        check(audience.contains(ids.at("bulk" + std::to_string(i))) == (i >= 40),
+              "Audience score ID tie-break or limit changed");
+    exec("UPDATE clips SET moderation_hidden=1 WHERE id=" + std::to_string(ids.at("bulk199")));
+    auto filtered = selected();
+    check(!filtered.contains(ids.at("bulk199")) && filtered.contains(ids.at("bulk39")),
+          "Ranked sources applied visibility after their limit");
+    exec("UPDATE clips SET moderation_hidden=0 WHERE id=" + std::to_string(ids.at("bulk199")));
+    exec("UPDATE clips SET twitch_created_at='2099-01-01T00:00:00Z' WHERE twitch_clip_id LIKE '" + prefix +
+         "bulk%'");
+    fixture("old", twitch_date("UTC_TIMESTAMP()-INTERVAL 720 HOUR"), "UTC_TIMESTAMP()");
+    fixture("not-old", twitch_date("UTC_TIMESTAMP()-INTERVAL 720 HOUR+INTERVAL 1 SECOND"), "UTC_TIMESTAMP()");
+    fixture("null-old", "NULL", "UTC_TIMESTAMP()-INTERVAL 720 HOUR");
+    fixture("null-not-old", "NULL", "UTC_TIMESTAMP()-INTERVAL 720 HOUR+INTERVAL 1 SECOND");
+    load_ids();
+    auto old = selected();
+    check(old.contains(ids.at("old")) && old.contains(ids.at("null-old")), "720-hour boundary lost");
+    check(!old.contains(ids.at("not-old")) && !old.contains(ids.at("null-not-old")),
+          "Evergreen cutoff included a younger clip");
 }
 int main() {
     try {
@@ -55,6 +158,7 @@ int main() {
             c.twitch_created_at = i < 4 ? "2020-01-01T00:00:00Z" : "2099-01-01T00:00:00Z";
             clip_ids.push_back(clips.create(c));
         }
+        candidate_range_contracts(cfg, clip_ids, suffix);
         auto profile = clips.recommendation_profile(user_ids[0]);
         check(profile.interactions.empty(), "Old data must not manufacture interactions");
         clips.record_user_view(user_ids[0], clip_ids[0]);
