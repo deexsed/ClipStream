@@ -1,3 +1,10 @@
+import ConfirmDialog from "../../shared/ui/Confirmation";
+import SectionNav from "../../shared/ui/SectionNav";
+import DataTable from "../../shared/ui/DataTable";
+import { Metric, MetricGrid } from "../../shared/ui/Metrics";
+import { Surface, SectionHeading } from "../../shared/ui/Layout";
+import { Feedback, EmptyState } from "../../shared/ui/Feedback";
+import { Input, Field } from "../../shared/ui/FormControls";
 import Select from "../../shared/ui/Select";
 import { useState } from "react";
 import { Link, useOutletContext, useSearchParams } from "react-router-dom";
@@ -9,8 +16,17 @@ import {
   RefreshCw,
   Shield,
   Trash2,
+  LayoutDashboard,
+  Users,
+  Flag,
+  Database,
+  Megaphone,
+  Rocket,
+  Server,
+  Network,
+  History,
 } from "lucide-react";
-import { request, queryString } from "../../shared/api/http";
+import { request } from "../../shared/api/http";
 import {
   useApi,
   usePages,
@@ -18,7 +34,6 @@ import {
   queryClient,
 } from "../../shared/api/queries";
 import {
-  Avatar,
   Button,
   Dialog,
   LoadMore,
@@ -30,57 +45,50 @@ import { useSession } from "../auth/Session";
 import AdsManager from "./AdsManager";
 import ModerationManager from "./ModerationManager";
 import ImportMetrics from "./ImportMetrics";
+import UsersManager from "./UsersManager";
+import { BarChart } from "./ConsoleCharts";
+import "./Console.css";
 
-const roleNames = {
-  user: "Пользователь",
-  moderator: "Модератор",
-  admin: "Администратор",
-  vip: "VIP",
-};
-export default function ConsolePage({ admin = false }) {
+export default function ConsolePage({ admin: adminRoute = false }) {
   const session = useSession();
+  const admin = adminRoute || session.user?.role === 2;
   const { openLogin } = useOutletContext();
   const [params, setParams] = useSearchParams();
   const allowed = admin
     ? session.user?.role === 2
     : [1, 2].includes(session.user?.role);
-  const common = [
-    ["moderation", "Ограничения"],
-    ["reports", "Жалобы"],
-    ["ip", "Блокировки IP"],
-    ["audit", "Журнал"],
+  const tabs = [
+    ["overview", "Обзор", LayoutDashboard],
+    ["users", "Пользователи и доступ", Users],
+    ["reports", "Жалобы", Flag],
+    ...(admin
+      ? [
+          ["import", "Каталог и импорт", Database],
+          ["ads", "Реклама", Megaphone],
+          ["promotions", "Продвижение клипов", Rocket],
+        ]
+      : []),
+    ["system", "Система", Server],
+    ["ip", "Блокировки IP", Network],
+    ["audit", "Журнал", History],
   ];
-  const tabs = admin
-    ? [
-        ["overview", "Статистика"],
-        ["users", "Пользователи"],
-        ["ads", "Реклама"],
-        ["promotions", "Продвижение клипов"],
-        ["system", "Система"],
-        ...common,
-      ]
-    : [["overview", "Обзор"], ["system", "Система"], ...common];
-  const tab = tabs.some(([key]) => key === params.get("tab"))
-    ? params.get("tab")
+  const requestedTab =
+    params.get("tab") === "moderation" ? "users" : params.get("tab");
+  const tab = tabs.some(([key]) => key === requestedTab)
+    ? requestedTab
     : "overview";
   return (
     <div className="page console-page">
       <PageHeading
         eyebrow="Управление ClipStream"
         title={admin ? "Панель администратора" : "Консоль персонала"}
-        description="Состояние сервиса, сообщество и управление контентом."
-      >
-        {session.user?.role === 2 && (
-          <Link className="button" to={admin ? "/staff" : "/admin"}>
-            {admin ? "Система" : "Администрирование"} <ArrowUpRight size={16} />
-          </Link>
-        )}
-      </PageHeading>
+        description="Сообщество, модерация и работа платформы в одном пространстве."
+      />
       {!session.authenticated ? (
-        <div className="surface">
+        <Surface>
           <p>Войдите, чтобы продолжить.</p>
           <Button onClick={openLogin}>Войти</Button>
-        </div>
+        </Surface>
       ) : session.loading ? (
         <Status loading />
       ) : session.error ? (
@@ -95,28 +103,25 @@ export default function ConsolePage({ admin = false }) {
         />
       ) : (
         <>
-          <nav className="profile-tabs" aria-label="Разделы управления">
-            {tabs.map(([key, label]) => (
-              <button
-                key={key}
-                aria-current={tab === key ? "page" : undefined}
-                onClick={() => setParams({ tab: key })}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
-          <div className="tab-content" key={tab}>
-            {tab === "overview" && <Overview admin={admin} />}
-            {tab === "system" && <System />}
-            {tab === "users" && <UserManagement />}
-            {tab === "promotions" && <Promotions />}
-            {tab === "ads" && <AdsManager />}
-            {["moderation", "reports", "ip", "audit"].includes(tab) && (
-              <ModerationManager
-                section={tab === "moderation" ? "accounts" : tab}
-              />
-            )}
+          <div className="console-layout">
+            <SectionNav
+              label="Разделы управления"
+              items={tabs}
+              value={tab}
+              onChange={(key) => setParams({ tab: key })}
+              rail
+            />
+            <div className="console-content" key={tab}>
+              {tab === "overview" && <Overview admin={admin} />}
+              {tab === "system" && <System />}
+              {tab === "users" && <UsersManager />}
+              {tab === "import" && <ImportPanel />}
+              {tab === "promotions" && <Promotions />}
+              {tab === "ads" && <AdsManager />}
+              {["reports", "ip", "audit"].includes(tab) && (
+                <ModerationManager section={tab} />
+              )}
+            </div>
           </div>
         </>
       )}
@@ -132,12 +137,12 @@ function Overview({ admin }) {
   const metrics = data.data?.overview;
   return (
     <>
-      <div className="section-label">
+      <SectionHeading>
         <h2>{admin ? "Платформа сегодня" : "Рабочее пространство"}</h2>
         <Button busy={data.isFetching} onClick={() => data.refetch()}>
           <RefreshCw size={15} /> Обновить
         </Button>
-      </div>
+      </SectionHeading>
       <Status
         loading={data.isPending}
         error={data.error}
@@ -145,59 +150,117 @@ function Overview({ admin }) {
       >
         {admin ? (
           <>
-            <div className="metric-grid">
+            <MetricGrid>
               {[
                 ["users_total", "Пользователей"],
                 ["clips_total", "Клипов"],
                 ["comments_total", "Комментариев"],
                 ["views_24h", "Открытий за сутки"],
-                ["users_admin", "Администраторов"],
-                ["users_moderator", "Модераторов"],
               ].map(([key, label]) => (
-                <div className="surface metric" key={key}>
-                  <span>{label}</span>
-                  <strong>{number(metrics?.[key])}</strong>
-                </div>
+                <Metric
+                  key={key}
+                  label={<>{label}</>}
+                  value={<>{number(metrics?.[key])}</>}
+                />
               ))}
+            </MetricGrid>
+            <div className="console-chart-grid">
+              <BarChart
+                title="Состав сообщества"
+                description="Текущее распределение ролей"
+                rows={[
+                  ["Пользователи", metrics?.users_regular],
+                  ["VIP", metrics?.users_vip],
+                  ["Модераторы", metrics?.users_moderator],
+                  ["Администраторы", metrics?.users_admin],
+                ]}
+              />
+              <BarChart
+                title="Категории каталога"
+                description="Крупнейшие категории по количеству клипов"
+                rows={(data.data?.clip_import?.categories || [])
+                  .slice(0, 6)
+                  .map((row) => [row.name, row.clips])}
+              />
             </div>
-            <ImportMetrics data={data.data?.clip_import} />
-            <section className="surface">
+            <div className="console-shortcuts">
+              <Surface as={Link} to="?tab=users">
+                <Shield size={20} />
+                <strong>Пользователи и доступ</strong>
+                <span className="muted">Роли, блокировки, отстранения</span>
+              </Surface>
+              <Surface as={Link} to="?tab=reports">
+                <Activity size={20} />
+                <strong>Очередь жалоб</strong>
+                <span className="muted">Решения по контенту и сообществу</span>
+              </Surface>
+              <Surface as={Link} to="?tab=import">
+                <RefreshCw size={20} />
+                <strong>Каталог и импорт</strong>
+                <span className="muted">Динамика загрузки и бюджет Twitch</span>
+              </Surface>
+            </div>
+            <Surface as="section">
               <h2>Активность за 24 часа</h2>
-              <div className="metric-grid">
-                <div className="metric">
-                  <span>Активных сессий</span>
-                  <strong>
-                    {number(data.data?.analytics_24h?.sessions_touched_24h)}
-                  </strong>
-                </div>
-                <div className="metric">
-                  <span>Секунд из клиентских событий за 7 дней</span>
-                  <strong>
-                    {number(data.data?.analytics_24h?.user_daily_7d?.watch_sec)}
-                  </strong>
-                </div>
-              </div>
+              <MetricGrid>
+                <Metric
+                  label={<>Активных сессий</>}
+                  value={
+                    <>
+                      {number(data.data?.analytics_24h?.sessions_touched_24h)}
+                    </>
+                  }
+                  surface={false}
+                />
+                <Metric
+                  label={<>Секунд из клиентских событий за 7 дней</>}
+                  value={
+                    <>
+                      {number(
+                        data.data?.analytics_24h?.user_daily_7d?.watch_sec,
+                      )}
+                    </>
+                  }
+                  surface={false}
+                />
+              </MetricGrid>
               <p className="muted">
                 Открытия учитываются отдельно. Плеер клипов Twitch не передаёт
                 достоверное время воспроизведения; новый интерфейс не отправляет
                 вымышленные секунды просмотра.
               </p>
-            </section>
+            </Surface>
           </>
         ) : (
-          <div className="surface">
+          <Surface>
             <h2>{data.data?.username}</h2>
             <p className="muted">
-              Роль: {roleNames[data.data?.role] || "Персонал"}
+              Роль:{" "}
+              {{ admin: "Администратор", moderator: "Модератор" }[
+                data.data?.role
+              ] || "Персонал"}
             </p>
             <Link className="text-link" to="/staff?tab=system">
               Проверить состояние системы <ArrowUpRight size={16} />
             </Link>
-          </div>
+          </Surface>
         )}
       </Status>
       {!admin && <System />}
     </>
+  );
+}
+
+function ImportPanel() {
+  const query = useApi("/admin/dashboard", { refetchInterval: 30000 });
+  return (
+    <Status
+      loading={query.isPending}
+      error={query.error}
+      onRetry={query.refetch}
+    >
+      <ImportMetrics data={query.data?.clip_import} />
+    </Status>
   );
 }
 
@@ -206,7 +269,7 @@ function System() {
   const eventsub = useApi("/eventsub/status", { refetchInterval: 30000 });
   return (
     <section>
-      <div className="section-label">
+      <SectionHeading>
         <h2>Состояние компонентов</h2>
         <Button
           busy={query.isFetching}
@@ -217,34 +280,34 @@ function System() {
         >
           Обновить
         </Button>
-      </div>
+      </SectionHeading>
       <Status
         loading={query.isPending}
         error={query.error}
         onRetry={query.refetch}
       >
-        <div className="metric-grid">
+        <MetricGrid>
           {[
             ["MySQL", query.data?.mysql_ok],
             ["Redis", query.data?.redis_ok],
           ].map(([label, ok]) => (
-            <div className="surface component-health" key={label}>
+            <Surface className="component-health" key={label}>
               <span>{label}</span>
               <strong className={ok ? "healthy" : "unhealthy"}>
                 {ok ? <CheckCircle2 size={18} /> : <Activity size={18} />}
                 {ok ? "Доступен" : "Недоступен"}
               </strong>
-            </div>
+            </Surface>
           ))}
-          <div className="surface component-health">
+          <Surface className="component-health">
             <span>Время работы API</span>
             <strong>
               {Math.floor((query.data?.uptime_seconds || 0) / 60)} мин.
             </strong>
-          </div>
-        </div>
+          </Surface>
+        </MetricGrid>
       </Status>
-      <div className="surface">
+      <Surface>
         <h3>События Twitch</h3>
         <Status
           loading={eventsub.isPending}
@@ -265,7 +328,7 @@ function System() {
               "Статус обновляется автоматически."}
           </p>
         </Status>
-      </div>
+      </Surface>
       <p className="muted">
         Версия {query.data?.process?.version || "—"} · обновлено{" "}
         {query.data?.utc_time
@@ -273,132 +336,6 @@ function System() {
           : "—"}
       </p>
     </section>
-  );
-}
-
-function UserManagement() {
-  const [search, setSearch] = useState("");
-  const query = usePages(
-    "/admin/users",
-    "users",
-    { q: search },
-    { pageSize: 30 },
-  );
-  const rows = pageItems(query, "users");
-  return (
-    <section>
-      <form
-        className="inline-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setSearch(new FormData(event.currentTarget).get("q").trim());
-        }}
-      >
-        <input
-          name="q"
-          aria-label="Найти пользователя"
-          placeholder="Имя или почта"
-          type="search"
-        />
-        <Button>Найти</Button>
-      </form>
-      <Status
-        loading={query.isPending}
-        error={!query.data && query.error}
-        onRetry={query.refetch}
-      >
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Пользователь</th>
-                <th>Почта</th>
-                <th>Роль</th>
-                <th>Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((user) => (
-                <UserRole key={`${user.id}:${user.role}`} user={user} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {rows.length === 0 && (
-          <p className="empty-state">Пользователи не найдены.</p>
-        )}
-        <LoadMore query={query} />
-      </Status>
-    </section>
-  );
-}
-
-function UserRole({ user }) {
-  const [role, setRole] = useState(user.role);
-  const [confirm, setConfirm] = useState(false);
-  const mutation = useMutation({
-    mutationFn: () =>
-      request(`/admin/users/${user.id}/role`, {
-        method: "POST",
-        body: { role },
-      }),
-    onSuccess: () => {
-      setConfirm(false);
-      queryClient.invalidateQueries({ queryKey: ["pages", "/admin/users"] });
-      queryClient.invalidateQueries({ queryKey: ["api", "/admin/dashboard"] });
-    },
-  });
-  return (
-    <tr>
-      <td>
-        <Link
-          className="creator"
-          to={`/u/${encodeURIComponent(user.username)}`}
-        >
-          <Avatar user={user} />
-          {user.username}
-        </Link>
-      </td>
-      <td>{user.email}</td>
-      <td>
-        <Select
-          aria-label={`Роль ${user.username}`}
-          value={role}
-          onChange={(event) => setRole(event.target.value)}
-        >
-          {Object.entries(roleNames).map(([key, label]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </Select>
-      </td>
-      <td>
-        <Button disabled={role === user.role} onClick={() => setConfirm(true)}>
-          Изменить
-        </Button>
-        <Dialog
-          open={confirm}
-          onClose={() => setConfirm(false)}
-          title="Изменить права доступа"
-        >
-          <p>
-            {user.username}: {roleNames[user.role]} → {roleNames[role]}
-          </p>
-          {mutation.error && <Status error={mutation.error} />}
-          <div className="dialog-actions">
-            <Button onClick={() => setConfirm(false)}>Отмена</Button>
-            <Button
-              variant="primary"
-              busy={mutation.isPending}
-              onClick={() => mutation.mutate()}
-            >
-              Подтвердить
-            </Button>
-          </div>
-        </Dialog>
-      </td>
-    </tr>
   );
 }
 
@@ -410,11 +347,13 @@ function Promotions() {
     { pageSize: 30 },
   );
   const [deleting, setDeleting] = useState(null);
+  const [creating, setCreating] = useState(false);
   const mutation = useMutation({
     mutationFn: ({ method, body, id }) =>
       request(`/admin/promotions${id ? "/" + id : ""}`, { method, body }),
     onSuccess: () => {
       setDeleting(null);
+      setCreating(false);
       queryClient.invalidateQueries({
         queryKey: ["pages", "/admin/promotions"],
       });
@@ -425,132 +364,160 @@ function Promotions() {
     value ? new Date(value).toISOString().slice(0, 19).replace("T", " ") : "";
   return (
     <section>
-      <h2>Продвижение клипов</h2>
-      <form
-        className="surface form-grid"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const form = Object.fromEntries(new FormData(event.currentTarget));
-          mutation.mutate({
-            method: "POST",
-            body: {
-              ...form,
-              clip_id: Number(form.clip_id),
-              boost_score: Number(form.boost_score),
-              starts_at: toUtc(form.starts_at),
-              ends_at: toUtc(form.ends_at),
-            },
-          });
-        }}
-      >
-        <label>
-          ID клипа
-          <input name="clip_id" type="number" min={1} required />
-        </label>
-        <label>
-          Вес продвижения
-          <input
-            name="boost_score"
-            type="number"
-            min={0}
-            max={500}
-            defaultValue={45}
-            required
-          />
-        </label>
-        <label>
-          Размещение
-          <Select aria-label="Размещение" name="placement">
-            {[
-              ["recommended", "Рекомендации"],
-              ["all", "Везде"],
-              ["hot", "Популярное"],
-              ["fresh", "Новинки"],
-              ["feed", "Лента"],
-              ["explore", "Открытия"],
-              ["related", "Похожие"],
-            ].map(([value, title]) => (
-              <option key={value} value={value}>
-                {title}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label>
-          Метка
-          <input name="label" maxLength={64} />
-        </label>
-        <label>
-          Начало (местное время)
-          <input name="starts_at" type="datetime-local" />
-        </label>
-        <label>
-          Окончание (местное время)
-          <input name="ends_at" type="datetime-local" />
-        </label>
-        <Button variant="primary" busy={mutation.isPending}>
+      <SectionHeading>
+        <div>
+          <h2>Продвижение клипов</h2>
+          <p className="muted">
+            Дополнительный вес в выбранных лентах на заданный период.
+          </p>
+        </div>
+        <Button
+          variant="primary"
+          onClick={() => {
+            mutation.reset();
+            setCreating(true);
+          }}
+        >
           Добавить продвижение
         </Button>
-      </form>
-      {mutation.error && <Status error={mutation.error} />}
+      </SectionHeading>
+      <Dialog
+        open={creating}
+        onClose={() => {
+          if (!mutation.isPending) setCreating(false);
+        }}
+        title="Новое продвижение"
+      >
+        <Surface
+          as="form"
+          className="form-grid"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = Object.fromEntries(new FormData(event.currentTarget));
+            mutation.mutate({
+              method: "POST",
+              body: {
+                ...form,
+                clip_id: Number(form.clip_id),
+                boost_score: Number(form.boost_score),
+                starts_at: toUtc(form.starts_at),
+                ends_at: toUtc(form.ends_at),
+              },
+            });
+          }}
+        >
+          <Field>
+            ID клипа
+            <Input name="clip_id" type="number" min={1} required />
+          </Field>
+          <Field>
+            Вес продвижения
+            <Input
+              name="boost_score"
+              type="number"
+              min={0}
+              max={500}
+              defaultValue={45}
+              required
+            />
+          </Field>
+          <Field>
+            Размещение
+            <Select aria-label="Размещение" name="placement">
+              {[
+                ["recommended", "Рекомендации"],
+                ["all", "Везде"],
+                ["hot", "Популярное"],
+                ["fresh", "Новинки"],
+                ["feed", "Лента"],
+                ["explore", "Открытия"],
+                ["related", "Похожие"],
+              ].map(([value, title]) => (
+                <option key={value} value={value}>
+                  {title}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field>
+            Метка
+            <Input name="label" maxLength={64} />
+          </Field>
+          <Field>
+            Начало (местное время)
+            <Input name="starts_at" type="datetime-local" />
+          </Field>
+          <Field>
+            Окончание (местное время)
+            <Input name="ends_at" type="datetime-local" />
+          </Field>
+          <Button variant="primary" busy={mutation.isPending}>
+            Добавить продвижение
+          </Button>
+        </Surface>
+        {mutation.error && <Status error={mutation.error} />}
+      </Dialog>
       {mutation.isSuccess && (
-        <p className="feedback" role="status">
-          Изменения сохранены
-        </p>
+        <Feedback role="status">Изменения сохранены</Feedback>
       )}
       <Status
         loading={query.isPending}
         error={!query.data && query.error}
         onRetry={query.refetch}
       >
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Клип</th>
-                <th>Размещение</th>
-                <th>Вес</th>
-                <th>Метка</th>
-                <th>Окончание</th>
-                <th />
+        <DataTable label="Продвижение клипов">
+          <thead>
+            <tr>
+              <th>Клип</th>
+              <th>Размещение</th>
+              <th>Вес</th>
+              <th>Метка</th>
+              <th>Окончание</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <td>
+                  <Link to={`/clip/${row.clip_id}`}>#{row.clip_id}</Link>
+                </td>
+                <td>{row.placement}</td>
+                <td>{row.boost_score}</td>
+                <td>{row.label}</td>
+                <td>{date(row.ends_at, true) || "Без срока"}</td>
+                <td>
+                  <Button
+                    size="compact"
+                    onClick={() => {
+                      mutation.reset();
+                      setDeleting(row);
+                    }}
+                  >
+                    <Trash2 size={15} /> Удалить
+                  </Button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id}>
-                  <td>
-                    <Link to={`/clip/${row.clip_id}`}>#{row.clip_id}</Link>
-                  </td>
-                  <td>{row.placement}</td>
-                  <td>{row.boost_score}</td>
-                  <td>{row.label}</td>
-                  <td>{date(row.ends_at, true) || "Без срока"}</td>
-                  <td>
-                    <Button onClick={() => setDeleting(row)}>
-                      <Trash2 size={15} /> Удалить
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </DataTable>
+
+        {rows.length === 0 && (
+          <EmptyState as="p">Продвижений пока нет.</EmptyState>
+        )}
         <LoadMore query={query} />
       </Status>
-      <Dialog
+      <ConfirmDialog
         open={Boolean(deleting)}
         onClose={() => setDeleting(null)}
         title="Удалить продвижение"
+        pending={mutation.isPending}
+        onConfirm={() => mutation.mutate({ method: "DELETE", id: deleting.id })}
+        confirmLabel={<>Удалить</>}
+        error={mutation.error}
       >
         <p>Клип останется на сайте, его дополнительный вес будет снят.</p>
-        <Button
-          variant="primary"
-          busy={mutation.isPending}
-          onClick={() => mutation.mutate({ method: "DELETE", id: deleting.id })}
-        >
-          Удалить
-        </Button>
-      </Dialog>
+      </ConfirmDialog>
     </section>
   );
 }

@@ -42,7 +42,9 @@ it("distinguishes platform imports, updates, Twitch creation time and local defe
   );
   expect(screen.getByText("27 648", { exact: false })).toBeTruthy();
   expect(screen.getByText("Созданы на Twitch за 4 часа")).toBeTruthy();
-  expect(screen.getByRole("img", { name: /График новых клипов/ })).toBeTruthy();
+  expect(
+    screen.getByRole("region", { name: /График новых клипов/ }),
+  ).toBeTruthy();
   expect(screen.getByText("Нет свежих заголовков")).toBeTruthy();
   expect(
     within(

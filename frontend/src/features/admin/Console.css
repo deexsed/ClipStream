@@ -1,0 +1,246 @@
+.console-page {
+  max-width: 1600px;
+}
+.console-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+.console-content {
+  min-width: 0;
+}
+.console-content h2 {
+  font-size: 1.3rem;
+  letter-spacing: -0.025em;
+}
+.console-content h3 {
+  margin-top: 0;
+}
+.console-content td:first-child {
+  max-width: 340px;
+  overflow-wrap: anywhere;
+}
+.console-content .section-label {
+  flex-wrap: wrap;
+}
+.console-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0;
+  flex-wrap: wrap;
+}
+.console-search {
+  flex: 1 1 240px;
+}
+.console-state {
+  display: inline-flex;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--raised);
+  font-size: 0.85rem;
+}
+.console-state-warning {
+  color: var(--theme-danger-text, #ffb2bf);
+  background: var(--theme-danger-bg, #46242c);
+}
+.console-user-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  overflow-wrap: anywhere;
+}
+.console-user-summary h3 {
+  margin-bottom: 2px;
+}
+.console-access-state {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.console-access-state > div {
+  background: var(--raised);
+  border-radius: 10px;
+  padding: 14px;
+  min-width: 0;
+}
+.console-access-state dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.console-access-state dd {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+.console-user-dialog {
+  width: min(620px, calc(100vw - 24px));
+}
+.console-user-dialog .form-stack {
+  margin-top: 24px;
+}
+.console-role-form {
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+.console-confirm {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-top: 20px;
+  overflow-wrap: anywhere;
+}
+.console-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin: 22px 0;
+}
+.console-chart h3 {
+  margin: 0;
+}
+.console-chart p {
+  font-size: 0.85rem;
+}
+.console-rechart {
+  min-width: 0;
+  width: 100%;
+  margin: 1.2rem 0;
+}
+.console-rechart .recharts-surface:focus-visible {
+  outline: 2px solid var(--accent);
+  border-radius: 4px;
+}
+.console-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 22px 0;
+}
+.console-shortcuts > a {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.console-shortcuts svg {
+  color: var(--accent);
+}
+.console-shortcuts span {
+  font-size: 0.85rem;
+}
+.console-chart summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+.console-chart summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .console-shortcuts > a:hover {
+    border-color: var(--accent);
+  }
+}
+@media (max-width: 1100px) {
+  .console-layout {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}
+@media (max-width: 650px) {
+  .console-chart-grid,
+  .console-shortcuts,
+  .console-access-state {
+    grid-template-columns: 1fr;
+  }
+  .console-user-summary {
+    flex-wrap: wrap;
+  }
+}
+
+/* Functional content stays still; shared Dialog and Select own reversible motion. */
+.console-content h2 {
+  line-height: 1.25;
+  font-weight: 650;
+}
+.console-content small {
+  letter-spacing: 0.01em;
+}
+.console-confirm h3:focus {
+  outline: none;
+}
+@media (prefers-contrast: more) {
+  .console-confirm,
+  .console-access-state > div {
+    border: 1px solid currentColor;
+  }
+}
+@media (max-width: 650px) {
+  .console-users .table-scroll {
+    border: 0;
+    background: transparent;
+    overflow: visible;
+  }
+  .console-users table,
+  .console-users tbody {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+  .console-users thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .console-users tbody {
+    display: grid;
+    gap: 12px;
+  }
+  .console-users tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+  }
+  .console-users td {
+    display: block;
+    padding: 9px;
+    border: 0;
+    min-width: 0;
+    white-space: normal;
+  }
+  .console-users td:first-child,
+  .console-users td:last-child {
+    grid-column: 1 / -1;
+  }
+  .console-users td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin-bottom: 5px;
+  }
+  .console-users td:last-child .button {
+    width: 100%;
+  }
+}
+
+.console-content-tools {
+  margin-top: 24px;
+}
+.console-content-tools > summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 24px;
+}
+.console-content-tools .content-action {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}

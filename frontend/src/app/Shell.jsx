@@ -184,7 +184,11 @@ function ShellContent() {
                 <Bell size={18} /> <span>Отслеживаю</span>
               </NavLink>
               {[1, 2].includes(session.user.role) && (
-                <Link to="/staff" title="Консоль" aria-label="Консоль">
+                <Link
+                  to={session.user.role === 2 ? "/admin" : "/staff"}
+                  title="Консоль"
+                  aria-label="Консоль"
+                >
                   <Shield size={18} /> <span>Консоль</span>
                 </Link>
               )}

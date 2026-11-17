@@ -1,3 +1,9 @@
+import ConfirmDialog from "../../shared/ui/Confirmation";
+import DataTable from "../../shared/ui/DataTable";
+import { Metric, MetricGrid } from "../../shared/ui/Metrics";
+import { SectionHeading } from "../../shared/ui/Layout";
+import { EmptyState } from "../../shared/ui/Feedback";
+import { Input, TextArea, Field, Checkbox } from "../../shared/ui/FormControls";
 import Select from "../../shared/ui/Select";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -11,6 +17,7 @@ import {
 } from "../../shared/api/queries";
 import { Button, Dialog, LoadMore, Status } from "../../shared/ui/Primitives";
 import { date, number } from "../../shared/format";
+import { BarChart } from "./ConsoleCharts";
 const types = {
   banner: "Баннер",
   feed: "Вставка в ленту",
@@ -52,82 +59,99 @@ export default function AdsManager() {
   });
   return (
     <section>
-      <div className="section-label">
+      <SectionHeading>
         <h2>Рекламные кампании</h2>
         <Button variant="primary" onClick={() => setEditing({})}>
           <Plus size={16} /> Новая кампания
         </Button>
-      </div>
+      </SectionHeading>
       <Status
         error={metrics.error}
         loading={metrics.isPending}
         onRetry={metrics.refetch}
       >
-        <div className="metric-grid">
+        <MetricGrid>
           {[
             ["served", "Выдано размещений"],
             ["impressions", "Показы"],
             ["clicks", "Переходы"],
           ].map(([key, label]) => (
-            <div className="surface metric" key={key}>
-              <span>{label}</span>
-              <strong>{number(metrics.data?.[key])}</strong>
-            </div>
+            <Metric
+              key={key}
+              label={<>{label}</>}
+              value={<>{number(metrics.data?.[key])}</>}
+            />
           ))}
-        </div>
+        </MetricGrid>
       </Status>
       <p className="muted">
         Показ засчитывается после появления баннера на экране или начала
         рекламного видео. Выдача размещения учитывается отдельно.
       </p>
+      {metrics.data && (
+        <BarChart
+          title="Результаты рекламы"
+          description="Суммарные счётчики за всё время. Выдачи, показы и переходы учитываются отдельно."
+          rows={[
+            ["Выдано размещений", metrics.data.served],
+            ["Показы", metrics.data.impressions],
+            ["Переходы", metrics.data.clicks],
+          ]}
+        />
+      )}
       <Status
         loading={campaigns.isPending}
         error={!campaigns.data && campaigns.error}
         onRetry={campaigns.refetch}
       >
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Кампания</th>
-                <th>Формат</th>
-                <th>Статус</th>
-                <th>Показы / клики</th>
-                <th>Окончание</th>
-                <th>Действия</th>
+        <DataTable label="Рекламные кампании">
+          <thead>
+            <tr>
+              <th>Кампания</th>
+              <th>Формат</th>
+              <th>Статус</th>
+              <th>Показы / клики</th>
+              <th>Окончание</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageItems(campaigns, "campaigns").map((row) => (
+              <tr key={row.id}>
+                <td>
+                  <strong>{row.name}</strong>
+                  <small className="block">{row.advertiser}</small>
+                </td>
+                <td>{types[row.type]}</td>
+                <td>{row.enabled ? "Включена" : "На паузе"}</td>
+                <td>
+                  {number(row.metrics?.impressions)} /{" "}
+                  {number(row.metrics?.clicks)}
+                </td>
+                <td>{date(row.ends_at, true) || "Без срока"}</td>
+                <td>
+                  <div className="button-row">
+                    <Button size="compact" onClick={() => setEditing(row)}>
+                      <Pencil size={14} /> Изменить
+                    </Button>
+                    <Button
+                      size="compact"
+                      onClick={() => {
+                        remove.reset();
+                        setDeleting(row);
+                      }}
+                    >
+                      <Trash2 size={14} /> Удалить
+                    </Button>
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {pageItems(campaigns, "campaigns").map((row) => (
-                <tr key={row.id}>
-                  <td>
-                    <strong>{row.name}</strong>
-                    <small className="block">{row.advertiser}</small>
-                  </td>
-                  <td>{types[row.type]}</td>
-                  <td>{row.enabled ? "Включена" : "На паузе"}</td>
-                  <td>
-                    {number(row.metrics?.impressions)} /{" "}
-                    {number(row.metrics?.clicks)}
-                  </td>
-                  <td>{date(row.ends_at, true) || "Без срока"}</td>
-                  <td>
-                    <div className="button-row">
-                      <Button onClick={() => setEditing(row)}>
-                        <Pencil size={14} /> Изменить
-                      </Button>
-                      <Button onClick={() => setDeleting(row)}>
-                        <Trash2 size={14} /> Удалить
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </DataTable>
+
         {pageItems(campaigns, "campaigns").length === 0 && (
-          <p className="empty-state">Кампаний пока нет.</p>
+          <EmptyState as="p">Кампаний пока нет.</EmptyState>
         )}
         <LoadMore query={campaigns} />
       </Status>
@@ -148,27 +172,22 @@ export default function AdsManager() {
           />
         )}
       </Dialog>
-      <Dialog
+      <ConfirmDialog
         open={Boolean(deleting)}
         onClose={() => setDeleting(null)}
         title="Удалить кампанию"
+        pending={remove.isPending}
+        onConfirm={() => remove.mutate(deleting.id)}
+        confirmLabel={<>Удалить</>}
+        onCancel={() => setDeleting(null)}
+        cancelLabel={<>Отмена</>}
+        error={remove.error}
       >
         <p>
           Кампания больше не будет показываться. Накопленная статистика
           сохранится.
         </p>
-        {remove.error && <Status error={remove.error} />}
-        <div className="dialog-actions">
-          <Button onClick={() => setDeleting(null)}>Отмена</Button>
-          <Button
-            variant="primary"
-            busy={remove.isPending}
-            onClick={() => remove.mutate(deleting.id)}
-          >
-            Удалить
-          </Button>
-        </div>
-      </Dialog>
+      </ConfirmDialog>
     </section>
   );
 }
@@ -218,16 +237,16 @@ function CampaignForm({ initial, onSaved }) {
         save.mutate(body);
       }}
     >
-      <label>
+      <Field>
         Внутреннее название
-        <input
+        <Input
           name="name"
           defaultValue={initial.name}
           maxLength={120}
           required
         />
-      </label>
-      <label>
+      </Field>
+      <Field>
         Формат
         <Select
           aria-label="Формат рекламы"
@@ -241,138 +260,134 @@ function CampaignForm({ initial, onSaved }) {
             </option>
           ))}
         </Select>
-      </label>
-      <label>
+      </Field>
+      <Field>
         Заголовок
-        <input
+        <Input
           name="title"
           defaultValue={initial.title}
           maxLength={180}
           required
         />
-      </label>
-      <label>
+      </Field>
+      <Field>
         Описание
-        <textarea name="body" defaultValue={initial.body} maxLength={1000} />
-      </label>
+        <TextArea name="body" defaultValue={initial.body} maxLength={1000} />
+      </Field>
       <div className="form-grid">
-        <label>
+        <Field>
           Рекламодатель
-          <input
+          <Input
             name="advertiser"
             defaultValue={initial.advertiser}
             maxLength={180}
             required
           />
-        </label>
-        <label>
+        </Field>
+        <Field>
           Токен маркировки (erid)
-          <input
+          <Input
             name="disclosure_token"
             defaultValue={initial.disclosure_token}
             maxLength={200}
           />
-        </label>
+        </Field>
       </div>
-      <label>
+      <Field>
         Изображение (HTTPS)
-        <input
+        <Input
           name="image_url"
           type="url"
           defaultValue={initial.image_url}
           required={type !== "preroll"}
         />
-      </label>
+      </Field>
       {type === "preroll" && (
-        <label>
+        <Field>
           Видео (HTTPS)
-          <input
+          <Input
             name="video_url"
             type="url"
             defaultValue={initial.video_url}
             required
           />
-        </label>
+        </Field>
       )}
-      <label>
+      <Field>
         Ссылка рекламодателя (HTTPS)
-        <input
+        <Input
           name="click_url"
           type="url"
           defaultValue={initial.click_url}
           required
         />
-      </label>
+      </Field>
       <small>
         Медиа должны находиться на разрешённых оператором доменах. Видео
         показывается отдельным блоком перед плеером Twitch.
       </small>
       <div className="form-grid">
-        <label>
+        <Field>
           Начало
-          <input
+          <Input
             name="starts_at"
             type="datetime-local"
             defaultValue={localDate(initial.starts_at)}
           />
-        </label>
-        <label>
+        </Field>
+        <Field>
           Окончание
-          <input
+          <Input
             name="ends_at"
             type="datetime-local"
             defaultValue={localDate(initial.ends_at)}
           />
-        </label>
-        <label>
+        </Field>
+        <Field>
           Приоритет (0–1000)
-          <input
+          <Input
             name="priority"
             type="number"
             min={0}
             max={1000}
             defaultValue={initial.priority ?? 100}
           />
-        </label>
-        <label>
+        </Field>
+        <Field>
           Показов пользователю в сутки
-          <input
+          <Input
             name="daily_cap"
             type="number"
             min={1}
             max={100}
             defaultValue={initial.daily_cap ?? 3}
           />
-        </label>
-        <label>
+        </Field>
+        <Field>
           Пауза между выдачами, секунд
-          <input
+          <Input
             name="cooldown_seconds"
             type="number"
             min={0}
             max={86400}
             defaultValue={initial.cooldown_seconds ?? 300}
           />
-        </label>
-        <label>
+        </Field>
+        <Field>
           Пропуск видео через, секунд
-          <input
+          <Input
             name="skip_after_seconds"
             type="number"
             min={0}
             max={5}
             defaultValue={initial.skip_after_seconds ?? 3}
           />
-        </label>
+        </Field>
       </div>
-      <label className="checkbox-label">
-        <input
-          name="enabled"
-          type="checkbox"
-          defaultChecked={initial.enabled ?? false}
-        />{" "}
+      <Checkbox name="enabled" defaultChecked={initial.enabled ?? false}>
+        {" "}
         Кампания включена
-      </label>
+      </Checkbox>
       {save.error && <Status error={save.error} />}
       <Button variant="primary" busy={save.isPending}>
         Сохранить кампанию
