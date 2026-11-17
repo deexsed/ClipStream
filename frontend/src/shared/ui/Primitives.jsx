@@ -1,20 +1,34 @@
-import { Component, useLayoutEffect, useRef, useState } from "react";
+import {
+  Component,
+  forwardRef,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { AlertCircle, ArrowRight, Loader2, Play, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motionSettings } from "./Reveal";
 import { rememberDialogFocus, restoreDialogFocus } from "./dialogFocus";
-import { twitchImageUrl } from "../twitchImage";
+import TwitchImage from "./TwitchImage";
+import ExternalLink from "./ExternalLink";
+import { EmptyState } from "./Feedback";
+import "./Primitives.css";
+import "./Layout.css";
 
-export function Button({
-  children,
-  variant = "secondary",
-  busy,
-  className = "",
-  ...props
-}) {
+export const Button = forwardRef(function Button(
+  { children, variant = "secondary", size, busy, className = "", ...props },
+  ref,
+) {
   return (
     <button
-      className={`button button-${variant} ${className}`}
+      ref={ref}
+      className={
+        variant === "plain"
+          ? className
+          : `button button-${variant} ${className}`
+      }
+      type={variant === "plain" ? "button" : undefined}
+      data-size={size}
       aria-busy={busy || undefined}
       {...props}
       disabled={props.disabled || busy}
@@ -24,16 +38,49 @@ export function Button({
           <Loader2 size={16} className="spinner" />
         </span>
       )}
-      <span className="button-content">{children}</span>
+      {variant === "plain" ? (
+        children
+      ) : (
+        <span className="button-content">{children}</span>
+      )}
     </button>
   );
-}
+});
 
-export function IconButton({ label, children, ...props }) {
+export const IconButton = forwardRef(function IconButton(
+  { label, children, className = "", ...props },
+  ref,
+) {
   return (
-    <button className="icon-button" aria-label={label} title={label} {...props}>
+    <button
+      type="button"
+      ref={ref}
+      className={className ? `icon-button ${className}` : "icon-button"}
+      aria-label={label}
+      title={label}
+      {...props}
+    >
       {children}
     </button>
+  );
+});
+
+export function ButtonLink({
+  children,
+  variant = "secondary",
+  className = "",
+  ...props
+}) {
+  const Tag =
+    props.to !== undefined
+      ? Link
+      : props.target === "_blank"
+        ? ExternalLink
+        : "a";
+  return (
+    <Tag {...props} className={`button button-${variant} ${className}`}>
+      <span className="button-content">{children}</span>
+    </Tag>
   );
 }
 
@@ -55,13 +102,7 @@ export function Status({ error, loading, empty, onRetry, children }) {
         <Loader2 className="spinner" size={22} /> Загрузка…
       </div>
     );
-  if (empty)
-    return (
-      <div className="empty-state">
-        <Play size={28} strokeWidth={1.3} />
-        <h3>{empty}</h3>
-      </div>
-    );
+  if (empty) return <EmptyState icon={Play} title={empty} />;
   return children;
 }
 
@@ -93,20 +134,35 @@ export function PageHeading({ eyebrow, title, description, children }) {
   );
 }
 
-export function Avatar({ user, size = "", ...props }) {
+export function Avatar({ user, size = "", className = "", ...props }) {
+  const classes = ["avatar", size, className].filter(Boolean).join(" ");
   return user?.avatar_url || user?.profile_image_url ? (
-    <img
-      className={`avatar ${size}`}
-      src={twitchImageUrl(user.avatar_url || user.profile_image_url)}
+    <TwitchImage
+      className={classes}
+      src={user.avatar_url || user.profile_image_url}
       alt=""
       loading="lazy"
       decoding="async"
       {...props}
     />
   ) : (
-    <span className={`avatar avatar-fallback ${size}`} aria-hidden="true">
+    <span className={`${classes} avatar-fallback`} aria-hidden="true">
       {Array.from(user?.username || user?.login || "?")[0].toUpperCase()}
     </span>
+  );
+}
+
+export function Identity({ user, to, children, className = "", ...props }) {
+  const Tag = to !== undefined ? Link : "div";
+  return (
+    <Tag
+      {...props}
+      {...(to !== undefined ? { to } : {})}
+      className={`creator ${className}`}
+    >
+      <Avatar user={user} />
+      {children}
+    </Tag>
   );
 }
 

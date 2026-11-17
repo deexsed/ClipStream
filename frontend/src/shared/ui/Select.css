@@ -31,6 +31,7 @@
   display: flex;
   color: var(--theme-muted, #aaa5b8);
   flex-shrink: 0;
+  transition: transform var(--interaction-return) var(--ease);
 }
 .ui-select[data-state="open"] {
   background: var(--theme-selected-bg, #2b2934);
@@ -105,30 +106,23 @@
   height: 22px;
   color: var(--theme-muted, #b9aecf);
 }
-.select-label .ui-select,
-.comments-toolbar .ui-select,
-.rush-heading .ui-select {
+.field-inline > .ui-select,
+.ui-select[data-appearance="quiet"],
+.ui-select[data-appearance="pill"] {
   width: auto;
 }
-.rush-heading .ui-select {
+.ui-select[data-appearance="pill"] {
   border-radius: 999px;
-  min-height: 38px;
-  max-width: 210px;
 }
-.comments-toolbar .ui-select {
-  font-size: 0.8rem;
-  min-height: 34px;
-  padding: 7px 10px;
-  color: var(--theme-muted, #b7b0c4);
+.ui-select[data-appearance="quiet"] {
+  color: var(--muted);
   background: transparent;
   border-color: transparent;
-  border-radius: 9px;
-  gap: 8px;
 }
-.comments-toolbar .ui-select[data-state="open"] {
-  background: var(--theme-selected-bg, #2c2836);
+.ui-select[data-appearance="quiet"][data-state="open"] {
+  background: var(--theme-selected-bg);
+  border-color: var(--line);
   box-shadow: none;
-  border-color: var(--theme-line, #494151);
 }
 @keyframes select-reveal {
   from {
@@ -145,22 +139,11 @@
     background: var(--theme-raised, #2d2a35);
     border-color: var(--theme-accent, #62576f);
   }
-  .comments-toolbar .ui-select:hover {
-    background: var(--theme-selected-bg, #27232f);
-  }
 }
 @media (max-width: 680px) {
-  .ui-select {
-    min-height: 44px;
-    font-size: 1rem;
-  }
   .ui-select-option {
     min-height: 44px;
     font-size: 0.94rem;
-  }
-  .comments-toolbar .ui-select {
-    font-size: 0.85rem;
-    min-height: 40px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -168,6 +151,33 @@
     animation: none;
   }
   .ui-select {
+    transition: none;
+  }
+}
+
+@media (pointer: coarse), (max-width: 680px) {
+  .ui-select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
+
+.ui-select[data-state="open"] .ui-select-chevron {
+  transform: rotate(180deg);
+}
+:root[data-input="keyboard"] .ui-select-chevron {
+  transition: none;
+}
+:root[data-input="keyboard"] .ui-select-content {
+  animation: none;
+}
+.ui-select-content[data-state="closed"] {
+  display: none;
+  animation: none;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-select-chevron {
     transition: none;
   }
 }

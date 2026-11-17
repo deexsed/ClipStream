@@ -1,13 +1,43 @@
 import {
   Children,
   Fragment,
+  forwardRef,
   isValidElement,
   useCallback,
   useState,
 } from "react";
 import * as Primitive from "@radix-ui/react-select";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Button } from "./Primitives";
 import "./Select.css";
+
+function SelectChevron() {
+  return (
+    <ChevronDown className="ui-select-chevron" size={15} aria-hidden="true" />
+  );
+}
+
+// A selection dialog and an inline select share the same trigger appearance.
+export const SelectButton = forwardRef(function SelectButton(
+  { children, expanded, ...props },
+  ref,
+) {
+  return (
+    <Button
+      {...props}
+      ref={ref}
+      variant="plain"
+      type="button"
+      className="ui-select"
+      aria-haspopup="dialog"
+      aria-expanded={expanded}
+      data-state={expanded ? "open" : "closed"}
+    >
+      <span>{children}</span>
+      <SelectChevron />
+    </Button>
+  );
+});
 
 function optionsFrom(children) {
   const options = [];
@@ -36,6 +66,7 @@ export default function Select({
   disabled,
   required,
   className = "",
+  appearance,
   ...props
 }) {
   const options = optionsFrom(children);
@@ -64,13 +95,12 @@ export default function Select({
         {...props}
         ref={anchor}
         className={`ui-select ${className}`}
+        data-appearance={appearance}
         onPointerDownCapture={() => setInput("pointer")}
         onKeyDownCapture={() => setInput("keyboard")}
       >
         <Primitive.Value />
-        <Primitive.Icon className="ui-select-chevron">
-          <ChevronDown size={15} />
-        </Primitive.Icon>
+        <SelectChevron />
       </Primitive.Trigger>
       <Primitive.Portal container={container || undefined}>
         <Primitive.Content

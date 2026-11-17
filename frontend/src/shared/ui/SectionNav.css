@@ -1,0 +1,117 @@
+/* Horizontal and rail variants of section navigation share this stylesheet. */
+
+.profile-tabs {
+  display: flex;
+  gap: 22px;
+  border-bottom: 1px solid var(--line);
+  overflow: auto;
+  margin-bottom: 28px;
+  scrollbar-width: thin;
+}
+
+.profile-tabs > button {
+  white-space: nowrap;
+  padding: 14px 2px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.profile-tabs > button[aria-current="page"] {
+  border-bottom-color: var(--accent);
+  color: var(--theme-text, #eee9ff);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .profile-tabs > button:hover {
+    color: var(--theme-text, #e7e3f1);
+  }
+}
+
+@media (max-width: 680px) {
+  .profile-tabs {
+    gap: 19px;
+    margin-bottom: 24px;
+  }
+  .profile-tabs > button {
+    font-size: 0.8rem;
+  }
+}
+
+.console-nav {
+  position: sticky;
+  top: 90px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 3px 14px #00000008;
+}
+
+.console-nav button {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  text-align: left;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 12px;
+  min-height: 44px;
+  color: var(--muted);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.console-nav button[aria-current] {
+  background: var(--raised);
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.console-nav button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .console-nav button:hover {
+    background: var(--raised);
+    color: inherit;
+  }
+}
+
+@media (max-width: 1100px) {
+  .console-nav {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    border-radius: 10px;
+  }
+  .console-nav button {
+    white-space: nowrap;
+  }
+}
+
+@supports (backdrop-filter: blur(12px)) {
+  .console-nav {
+    background: color-mix(in srgb, var(--panel) 94%, transparent);
+    backdrop-filter: blur(12px);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .console-nav {
+    background: var(--panel);
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .console-nav {
+    border: 1px solid currentColor;
+  }
+}

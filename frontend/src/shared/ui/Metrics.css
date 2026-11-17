@@ -1,0 +1,62 @@
+.profile-stats {
+  display: flex;
+  gap: 38px;
+  flex-wrap: wrap;
+  margin: 24px 0 34px;
+}
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.metric > span {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.metric strong {
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.metric.metric-compact {
+  gap: 3px;
+}
+.metric.metric-compact strong {
+  font-size: 1.7rem;
+}
+.metric.metric-compact > span {
+  font-size: 0.78rem;
+}
+@media (max-width: 680px) {
+  .profile-stats {
+    gap: 26px;
+  }
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .metric strong {
+    font-size: 1.7rem;
+  }
+  .metric > span {
+    font-size: 0.73rem;
+  }
+  .metric.metric-compact strong {
+    font-size: 1.5rem;
+  }
+  .metric.metric-compact > span {
+    font-size: 0.7rem;
+  }
+}
+@media (max-width: 360px) {
+  .profile-stats {
+    gap: 20px;
+  }
+}

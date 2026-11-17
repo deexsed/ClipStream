@@ -1,0 +1,51 @@
+/* Shared feedback and empty-state rules are owned here. */
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 36px 20px;
+  color: var(--muted);
+
+  flex-direction: column;
+  text-align: center;
+  min-height: 170px;
+}
+
+.empty-state h3 {
+  color: var(--theme-text, #dddde4);
+}
+
+.feedback {
+  color: var(--theme-success-text, #b7dec2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid #7caa8033;
+  border-radius: 10px;
+  background: #7caa8010;
+  transition: opacity 180ms var(--ease);
+}
+
+.feedback::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+@starting-style {
+  .feedback {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feedback {
+    transition: none;
+  }
+}

@@ -1,0 +1,98 @@
+.ui-input,
+.ui-textarea {
+  color: inherit;
+  background: var(--theme-panel, #141417);
+  border: 1px solid var(--theme-control-line, #3a3a44);
+  border-radius: 9px;
+  padding: 10px 12px;
+  min-width: 0;
+  max-width: 100%;
+  outline-offset: 4px;
+}
+.ui-textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+.ui-textarea[data-appearance="embedded"] {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.ui-textarea[data-appearance="embedded"]:focus-visible {
+  outline-offset: 0;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  font-size: 0.87rem;
+  color: var(--theme-text, #cccbd5);
+}
+.field-inline {
+  flex-direction: row;
+  align-items: center;
+}
+.checkbox-label {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.8rem;
+  color: var(--theme-muted, #b6b5c2);
+}
+.checkbox-label a {
+  color: var(--accent);
+}
+.checkbox-label .ui-checkbox {
+  accent-color: var(--accent);
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  flex: none;
+}
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin: 20px 0;
+}
+.form-grid > .button {
+  align-self: end;
+}
+.form-stack .ui-input,
+.form-stack .ui-textarea,
+.form-stack .ui-select {
+  width: 100%;
+}
+.inline-form {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0;
+}
+.inline-form .ui-input {
+  flex: 1;
+  max-width: 450px;
+}
+@media (pointer: coarse), (max-width: 680px) {
+  .ui-input,
+  .ui-textarea {
+    font-size: 16px;
+  }
+}
+@media (max-width: 680px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .inline-form {
+    flex-wrap: wrap;
+  }
+}

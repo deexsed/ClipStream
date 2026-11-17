@@ -1,0 +1,52 @@
+/* Native table styles and responsive scrolling are owned here. */
+.table-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.table-scroll {
+  overflow: auto;
+  margin: 20px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.data-table {
+  font-variant-numeric: tabular-nums;
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 620px;
+  font-size: 0.83rem;
+}
+
+.data-table td,
+.data-table th {
+  text-align: left;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.data-table th {
+  color: var(--muted);
+  background: var(--theme-panel, #19191e);
+  font-weight: 500;
+  font-size: 0.73rem;
+}
+
+.data-table tr:last-child td {
+  border-bottom: 0;
+}
+
+:root[data-theme="light"] .table-scroll {
+  background: var(--panel);
+}
+
+:root[data-theme="light"] .data-table th {
+  background: var(--raised);
+}
+
+.data-table.data-table-compact th,
+.data-table.data-table-compact td {
+  padding: 10px 12px;
+}
