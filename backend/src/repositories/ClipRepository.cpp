@@ -416,6 +416,7 @@ std::vector<models::Clip> ClipRepository::find_filtered(const ClipFilter &filter
     }
     const auto where = sql.str();
     std::string cte, from = " FROM clips c", ranked_where = where;
+    const char *page_join = " JOIN clips c ON c.id=ranked.id ";
     if (filter.period == TimePeriod::Week && filter.sort == ClipSort::Recent && filter.game_ids.empty() &&
         filter.tag.empty() && filter.search.empty() && filter.broadcaster_name.empty() && limit != 0) {
         // Timestamp is the primary sort key. Fetch the ordered prefix and all
@@ -426,9 +427,12 @@ std::vector<models::Clip> ClipRepository::find_filtered(const ClipFilter &filter
               " ORDER BY c.twitch_created_ts DESC,c.id DESC LIMIT " + std::to_string(prefix_size) +
               "), boundary AS (SELECT id,twitch_created_ts FROM recent_prefix "
               "ORDER BY twitch_created_ts,id LIMIT 1), candidates AS (SELECT id FROM recent_prefix UNION ALL "
-              "SELECT c.id FROM boundary b STRAIGHT_JOIN clips c ON c.twitch_created_ts=b.twitch_created_ts "
+              "SELECT c.id FROM boundary b STRAIGHT_JOIN clips c FORCE INDEX (idx_clips_recent_order) "
+              "ON c.twitch_created_ts=b.twitch_created_ts "
               "AND c.id<b.id" + where + ") ";
-        from = " FROM candidates candidate STRAIGHT_JOIN clips c ON c.id=candidate.id";
+        // Start from the small ID sets even if persistent clip statistics are stale.
+        from = " FROM candidates candidate STRAIGHT_JOIN clips c FORCE INDEX (PRIMARY) ON c.id=candidate.id";
+        page_join = " STRAIGHT_JOIN clips c FORCE INDEX (PRIMARY) ON c.id=ranked.id ";
         ranked_where.clear();
     }
     from += " LEFT JOIN " + promo_boost_subquery("'all','feed'") + " ON promo.clip_id=c.id";
@@ -437,7 +441,7 @@ std::vector<models::Clip> ClipRepository::find_filtered(const ClipFilter &filter
 
     const auto query = cte + "SELECT c.*,g.name AS game_name FROM (" + selection.str() + from + ranked_where +
                        " ORDER BY " + inner_order.str() + " LIMIT " + std::to_string(limit) +
-                       " OFFSET " + std::to_string(offset) + ") ranked JOIN clips c ON c.id=ranked.id "
+                       " OFFSET " + std::to_string(offset) + ") ranked" + page_join +
                        "LEFT JOIN games g ON g.id=c.game_id ORDER BY " + outer_order.str();
     const auto query_started = std::chrono::steady_clock::now();
     try {
@@ -2515,12 +2519,18 @@ void ClipRepository::fill_card_counts(const std::vector<models::Clip *> &clips) 
             ids.push_back(clip->id);
     if (ids.empty())
         return;
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
     std::ostringstream sql;
     sql << "SELECT c.id,(SELECT COUNT(*) FROM comments cm WHERE cm.clip_id=c.id),"
            "(SELECT COUNT(*) FROM view_history vh WHERE vh.clip_id=c.id) "
-           "FROM clips c WHERE c.id IN (";
-    append_in_numeric(sql, ids);
-    sql << ")";
+           "FROM (VALUES ";
+    for (size_t i = 0; i < ids.size(); ++i) {
+        if (i)
+            sql << ',';
+        sql << "ROW(" << ids[i] << ')';
+    }
+    sql << ") requested(id) STRAIGHT_JOIN clips c FORCE INDEX (PRIMARY) ON c.id=requested.id";
     database::ScopedConnection conn(pool_);
     if (database::query(conn.raw(), sql.str().c_str()))
         return;
